@@ -58,6 +58,46 @@ function eggsPerUnit(productType: 'cajon' | 'oferta_grande') {
   return productType === 'oferta_grande' ? 90 : 360;
 }
 
+const LOW_INVENTORY_THRESHOLD = 360; // 1 cajon en huevos
+
+const categoryLabel: Record<string, string> = {
+  pequeno: 'Pequeno',
+  mediano: 'Mediano',
+  grande: 'Grande',
+  extra_grande: 'Extra grande',
+  jumbo: 'Jumbo'
+};
+
+type NotificationInput = {
+  type: 'collection' | 'sale' | 'expense' | 'low_inventory';
+  title: string;
+  body?: string;
+  actorName?: string;
+  source?: 'direct' | 'sync';
+};
+
+// Best-effort: una notificacion nunca debe romper el registro principal.
+async function addNotification(input: NotificationInput) {
+  try {
+    await query(
+      `INSERT INTO notifications (type, title, body, actor_name, source)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [input.type, input.title, input.body ?? null, input.actorName ?? null, input.source ?? 'direct']
+    );
+  } catch (error) {
+    console.error('No se pudo registrar notificacion:', error);
+  }
+}
+
+function formatQ(value: number) {
+  return new Intl.NumberFormat('es-GT', {
+    style: 'currency',
+    currency: 'GTQ',
+    currencyDisplay: 'narrowSymbol',
+    maximumFractionDigits: 0
+  }).format(value || 0);
+}
+
 function parseError(error: unknown) {
   if (error instanceof z.ZodError) return { message: 'Datos invalidos.', issues: error.issues };
   if (error instanceof Error) return { message: error.message };
@@ -112,6 +152,7 @@ async function addSale(input: z.infer<typeof saleSchema>, userId: string) {
       requiredByCategory.set(item.category, (requiredByCategory.get(item.category) || 0) + eggs);
     }
 
+    const lowCrossed: Array<{ category: string; remaining: number }> = [];
     for (const [category, required] of requiredByCategory) {
       const inventory = await client.query<{ quantity: number }>(
         'SELECT quantity FROM inventory WHERE category = $1 FOR UPDATE',
@@ -120,6 +161,10 @@ async function addSale(input: z.infer<typeof saleSchema>, userId: string) {
       const available = inventory.rows[0]?.quantity ?? 0;
       if (available < required) {
         throw new Error(`Inventario insuficiente para ${category}. Disponible: ${available}, requerido: ${required}.`);
+      }
+      const remaining = available - required;
+      if (available >= LOW_INVENTORY_THRESHOLD && remaining < LOW_INVENTORY_THRESHOLD) {
+        lowCrossed.push({ category, remaining });
       }
     }
 
@@ -146,7 +191,7 @@ async function addSale(input: z.infer<typeof saleSchema>, userId: string) {
     }
 
     await client.query('COMMIT');
-    return sale.rows[0];
+    return { sale: sale.rows[0], lowCrossed };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -162,6 +207,54 @@ async function addExpense(input: z.infer<typeof expenseSchema>, userId: string) 
      RETURNING *`,
     [input.expenseDate, input.category, input.supplier, input.amount, input.notes, userId]
   );
+}
+
+type Source = 'direct' | 'sync';
+
+async function notifyCollection(input: z.infer<typeof collectionSchema>, actorName: string, source: Source) {
+  const eggs = input.pequeno + input.mediano + input.grande + input.extraGrande + input.jumbo;
+  await addNotification({
+    type: 'collection',
+    title: `${actorName} registro recoleccion`,
+    body: `${eggs} huevos buenos${input.rotos ? ` · ${input.rotos} rotos` : ''}`,
+    actorName,
+    source
+  });
+}
+
+async function notifySale(
+  input: z.infer<typeof saleSchema>,
+  sale: { total: number | string },
+  lowCrossed: Array<{ category: string; remaining: number }>,
+  actorName: string,
+  source: Source
+) {
+  const eggs = input.items.reduce((sum, item) => sum + eggsPerUnit(item.productType) * item.quantity, 0);
+  await addNotification({
+    type: 'sale',
+    title: `${actorName} registro venta`,
+    body: `${formatQ(Number(sale.total))} · ${eggs} huevos`,
+    actorName,
+    source
+  });
+  for (const crossed of lowCrossed) {
+    await addNotification({
+      type: 'low_inventory',
+      title: 'Inventario bajo',
+      body: `${categoryLabel[crossed.category] ?? crossed.category}: ${crossed.remaining} huevos disponibles`,
+      source
+    });
+  }
+}
+
+async function notifyExpense(input: z.infer<typeof expenseSchema>, actorName: string, source: Source) {
+  await addNotification({
+    type: 'expense',
+    title: `${actorName} registro gasto`,
+    body: `${formatQ(input.amount)} · ${input.category}`,
+    actorName,
+    source
+  });
 }
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
@@ -268,7 +361,9 @@ app.get('/api/inventory', requireAuth, requireRole('admin'), async (_req, res) =
 app.post('/api/collections', requireAuth, async (req, res) => {
   try {
     const input = collectionSchema.parse(req.body);
-    res.json({ collection: await addCollection(input, req.user!.id) });
+    const collection = await addCollection(input, req.user!.id);
+    await notifyCollection(input, req.user!.name, 'direct');
+    res.json({ collection });
   } catch (error) {
     res.status(400).json(parseError(error));
   }
@@ -282,7 +377,9 @@ app.get('/api/collections', requireAuth, requireRole('admin'), async (req, res) 
 app.post('/api/sales', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const input = saleSchema.parse(req.body);
-    res.json({ sale: await addSale(input, req.user!.id) });
+    const { sale, lowCrossed } = await addSale(input, req.user!.id);
+    await notifySale(input, sale, lowCrossed, req.user!.name, 'direct');
+    res.json({ sale });
   } catch (error) {
     res.status(400).json(parseError(error));
   }
@@ -296,7 +393,9 @@ app.get('/api/sales', requireAuth, requireRole('admin'), async (req, res) => {
 app.post('/api/expenses', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const input = expenseSchema.parse(req.body);
-    res.json({ expense: await addExpense(input, req.user!.id) });
+    const expense = await addExpense(input, req.user!.id);
+    await notifyExpense(input, req.user!.name, 'direct');
+    res.json({ expense });
   } catch (error) {
     res.status(400).json(parseError(error));
   }
@@ -382,20 +481,51 @@ app.patch('/api/users/:id', requireAuth, requireRole('admin'), async (req, res) 
   }
 });
 
+app.get('/api/notifications', requireAuth, requireRole('admin'), async (req, res) => {
+  const [notifications, unread] = await Promise.all([
+    query('SELECT id, type, title, body, actor_name, source, created_at FROM notifications ORDER BY created_at DESC LIMIT 50'),
+    queryOne<{ count: number }>(
+      `SELECT count(*)::int count FROM notifications n
+       WHERE n.created_at > COALESCE((SELECT last_seen_at FROM notification_reads WHERE user_id = $1), 'epoch')`,
+      [req.user!.id]
+    )
+  ]);
+  res.json({ notifications, unreadCount: unread?.count ?? 0 });
+});
+
+app.post('/api/notifications/read', requireAuth, requireRole('admin'), async (req, res) => {
+  await query(
+    `INSERT INTO notification_reads (user_id, last_seen_at) VALUES ($1, now())
+     ON CONFLICT (user_id) DO UPDATE SET last_seen_at = now()`,
+    [req.user!.id]
+  );
+  res.json({ ok: true });
+});
+
 app.post('/api/sync', requireAuth, async (req, res) => {
   try {
     const operations = z.array(z.object({ type: z.enum(['collection', 'sale', 'expense']), payload: z.unknown() })).parse(req.body.operations);
     const results = [];
 
+    const actor = req.user!.name;
     for (const operation of operations) {
-      if (operation.type === 'collection') results.push(await addCollection(collectionSchema.parse(operation.payload), req.user!.id));
+      if (operation.type === 'collection') {
+        const input = collectionSchema.parse(operation.payload);
+        results.push(await addCollection(input, req.user!.id));
+        await notifyCollection(input, actor, 'sync');
+      }
       if (operation.type === 'sale') {
         if (req.user!.role !== 'admin') throw new Error('Solo admin puede sincronizar ventas.');
-        results.push(await addSale(saleSchema.parse(operation.payload), req.user!.id));
+        const input = saleSchema.parse(operation.payload);
+        const { sale, lowCrossed } = await addSale(input, req.user!.id);
+        results.push(sale);
+        await notifySale(input, sale, lowCrossed, actor, 'sync');
       }
       if (operation.type === 'expense') {
         if (req.user!.role !== 'admin') throw new Error('Solo admin puede sincronizar gastos.');
-        results.push(await addExpense(expenseSchema.parse(operation.payload), req.user!.id));
+        const input = expenseSchema.parse(operation.payload);
+        results.push(await addExpense(input, req.user!.id));
+        await notifyExpense(input, actor, 'sync');
       }
     }
 

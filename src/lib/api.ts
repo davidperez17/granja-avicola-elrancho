@@ -1,4 +1,4 @@
-import type { AdminUser, CollectionPayload, CreateUserPayload, ExpensePayload, Role, SalePayload, User } from '../types';
+import type { AdminUser, AppNotification, CollectionPayload, CreateUserPayload, ExpensePayload, Role, SalePayload, User } from '../types';
 
 type ApiOptions = RequestInit & { json?: unknown };
 
@@ -77,4 +77,12 @@ export function createUser(payload: CreateUserPayload) {
 
 export function updateUser(id: string, changes: { role?: Role; active?: boolean }) {
   return api<{ user: AdminUser }>(`/api/users/${id}`, { method: 'PATCH', json: changes });
+}
+
+export function getNotifications() {
+  return api<{ notifications: AppNotification[]; unreadCount: number }>('/api/notifications');
+}
+
+export function markNotificationsRead() {
+  return api<{ ok: boolean }>('/api/notifications/read', { method: 'POST' });
 }

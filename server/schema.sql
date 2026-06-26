@@ -109,3 +109,20 @@ VALUES (
   '{"cajon":{"pequeno":0,"mediano":0,"grande":0,"extra_grande":0,"jumbo":0},"oferta_grande":0}'::jsonb
 )
 ON CONFLICT (key) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS notifications (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  type text NOT NULL,
+  title text NOT NULL,
+  body text,
+  actor_name text,
+  source text NOT NULL DEFAULT 'direct',
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS notifications_created_idx ON notifications(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS notification_reads (
+  user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  last_seen_at timestamptz NOT NULL DEFAULT now()
+);

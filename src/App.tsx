@@ -27,7 +27,8 @@ import {
   TrendingUp,
   Users,
   Wifi,
-  WifiOff
+  WifiOff,
+  X
 } from 'lucide-react';
 import {
   createUser,
@@ -35,9 +36,11 @@ import {
   getDashboard,
   getInventory,
   getMe,
+  getNotifications,
   getUsers,
   login,
   logout,
+  markNotificationsRead,
   postCollection,
   postExpense,
   postSale,
@@ -45,7 +48,17 @@ import {
   updateUser
 } from './lib/api';
 import { enqueueOperation, getQueuedOperations, syncQueuedOperations } from './lib/offline';
-import type { AdminUser, CategoryKey, CollectionPayload, CreateUserPayload, ExpensePayload, Role, SalePayload, User } from './types';
+import type {
+  AdminUser,
+  AppNotification,
+  CategoryKey,
+  CollectionPayload,
+  CreateUserPayload,
+  ExpensePayload,
+  Role,
+  SalePayload,
+  User
+} from './types';
 
 const categoryLabels: Record<CategoryKey, string> = {
   pequeno: 'Pequeno',
@@ -108,6 +121,24 @@ function formatNumber(value: number) {
 
 function collectionProduction(collection: Record<string, number>) {
   return categoryOrder.reduce((sum, key) => sum + Number(collection[key] || 0), 0);
+}
+
+function timeAgo(iso: string) {
+  const diff = Date.now() - new Date(iso).getTime();
+  const min = Math.round(diff / 60000);
+  if (min < 1) return 'ahora';
+  if (min < 60) return `hace ${min} min`;
+  const hours = Math.round(min / 60);
+  if (hours < 24) return `hace ${hours} h`;
+  const days = Math.round(hours / 24);
+  return `hace ${days} d`;
+}
+
+function notificationIcon(type: AppNotification['type']) {
+  if (type === 'sale') return <CircleDollarSign size={18} />;
+  if (type === 'expense') return <ReceiptText size={18} />;
+  if (type === 'low_inventory') return <AlertTriangle size={18} />;
+  return <Egg size={18} />;
 }
 
 type ProfitTrend = { label: string; tone: 'good' | 'bad' | 'neutral'; dir: 'up' | 'down' | null };
@@ -454,7 +485,17 @@ function LoginScreen({ onLogin, onBack }: { onLogin: (user: User) => void; onBac
 
 /* --------------------------------------------------------------------- hoy */
 
-function HoyScreen({ user, online }: { user: User; online: boolean }) {
+function HoyScreen({
+  user,
+  online,
+  unread,
+  onOpenNotifications
+}: {
+  user: User;
+  online: boolean;
+  unread: number;
+  onOpenNotifications: () => void;
+}) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null);
   const [message, setMessage] = useState('');
 
@@ -489,9 +530,19 @@ function HoyScreen({ user, online }: { user: User; online: boolean }) {
               <p className="hoy-name">{user.name}</p>
             </div>
           </div>
-          <span className="hoy-bell" aria-hidden="true">
+          <button
+            type="button"
+            className="hoy-bell"
+            onClick={onOpenNotifications}
+            aria-label={unread > 0 ? `Notificaciones, ${unread} sin leer` : 'Notificaciones'}
+          >
             <Bell size={20} />
-          </span>
+            {unread > 0 && (
+              <span className="bell-badge" aria-live="polite">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
@@ -1398,6 +1449,66 @@ function UsersScreen({ currentUser, onBack, onToast }: { currentUser: User; onBa
 
 /* ------------------------------------------------------------ sync banner */
 
+function NotificationsSheet({
+  open,
+  notifications,
+  onClose
+}: {
+  open: boolean;
+  notifications: AppNotification[];
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  return (
+    <div className="notif-scrim" role="dialog" aria-modal="true" aria-label="Notificaciones" onClick={onClose}>
+      <div className="notif-sheet" onClick={(event) => event.stopPropagation()}>
+        <div className="notif-head">
+          <h2 className="notif-title">Notificaciones</h2>
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        {notifications.length === 0 ? (
+          <div className="notif-empty">
+            <span className="notif-empty-icon" aria-hidden="true">
+              <Bell size={26} />
+            </span>
+            <p className="notif-empty-text">Sin notificaciones todavia</p>
+            <p className="notif-empty-sub">Aqui veras los registros de los trabajadores y avisos de inventario.</p>
+          </div>
+        ) : (
+          <div className="notif-list">
+            {notifications.map((item) => (
+              <div key={item.id} className={`notif-row ${item.type === 'low_inventory' ? 'notif-row-warn' : ''}`}>
+                <span className="notif-icon" aria-hidden="true">
+                  {notificationIcon(item.type)}
+                </span>
+                <span className="notif-main">
+                  <span className="notif-row-title">{item.title}</span>
+                  {item.body && <span className="notif-row-body">{item.body}</span>}
+                </span>
+                <span className="notif-time">
+                  {timeAgo(item.created_at)}
+                  {item.source === 'sync' ? ' · sync' : ''}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SyncBanner({ online, pending, onSync }: { online: boolean; pending: number; onSync: () => void }) {
   if (online && pending === 0) return null;
   return (
@@ -1454,14 +1565,36 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
     sale: emptySale(),
     expense: emptyExpense()
   }));
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [notifOpen, setNotifOpen] = useState(false);
 
   async function refreshPending() {
     setPending((await getQueuedOperations()).length);
   }
 
+  async function loadNotifications() {
+    try {
+      const result = await getNotifications();
+      setNotifications(result.notifications);
+      setUnread(result.unreadCount);
+    } catch {
+      /* sin conexion o error transitorio: se reintenta en el siguiente ciclo */
+    }
+  }
+
+  async function openNotifications() {
+    setNotifOpen(true);
+    if (unread > 0) {
+      setUnread(0);
+      await markNotificationsRead().catch(() => undefined);
+    }
+  }
+
   async function runSync() {
     await syncQueuedOperations().catch(() => undefined);
     await refreshPending();
+    if (isAdmin) loadNotifications();
   }
 
   useEffect(() => {
@@ -1485,6 +1618,24 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
     return () => window.removeEventListener('hashchange', onHashChange);
   }, [isAdmin]);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    loadNotifications();
+    const interval = setInterval(() => {
+      if (!document.hidden) loadNotifications();
+    }, 25000);
+    const onFocus = () => {
+      if (!document.hidden) loadNotifications();
+    };
+    document.addEventListener('visibilitychange', onFocus);
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onFocus);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [isAdmin]);
+
   function selectView(next: ViewKey) {
     setView(next);
     if (window.location.hash !== `#${next}`) window.location.hash = next;
@@ -1503,7 +1654,9 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
 
       <main id="main" className="shell-main" tabIndex={-1}>
         <SyncBanner online={online} pending={pending} onSync={runSync} />
-        {view === 'hoy' && isAdmin && <HoyScreen user={user} online={online} />}
+        {view === 'hoy' && isAdmin && (
+          <HoyScreen user={user} online={online} unread={unread} onOpenNotifications={openNotifications} />
+        )}
         <RegistrarScreen
           user={user}
           isAdmin={isAdmin}
@@ -1532,6 +1685,8 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
       </main>
 
       {toast && <Toast title={toast.title} detail={toast.detail} onDone={() => setToast(null)} />}
+
+      <NotificationsSheet open={notifOpen} notifications={notifications} onClose={() => setNotifOpen(false)} />
 
       <nav className="bottom-nav" aria-label="Navegacion principal">
         {nav.map((item) => (

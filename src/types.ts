@@ -52,6 +52,18 @@ export type ExpensePayload = {
   notes?: string;
 };
 
+export type NotificationType = 'collection' | 'sale' | 'expense' | 'low_inventory';
+
+export type AppNotification = {
+  id: string;
+  type: NotificationType;
+  title: string;
+  body: string | null;
+  actor_name: string | null;
+  source: 'direct' | 'sync';
+  created_at: string;
+};
+
 export type OfflineOperation = {
   id: string;
   type: 'collection' | 'sale' | 'expense';
