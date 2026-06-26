@@ -1728,8 +1728,21 @@ export default function App() {
 
   if (loading) {
     return (
-      <main className="boot">
-        <div className="boot-card">Cargando El Rancho...</div>
+      <main className="boot" role="status" aria-label="Cargando El Rancho">
+        <div className="boot-inner">
+          <span className="boot-logo" aria-hidden="true">
+            <Egg size={34} />
+          </span>
+          <div className="boot-text">
+            <p className="boot-name">El Rancho</p>
+            <p className="boot-sub">Control avicola</p>
+          </div>
+          <div className="boot-dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
       </main>
     );
   }

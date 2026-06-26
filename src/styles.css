@@ -117,20 +117,108 @@ a:focus-visible {
 /* ------------------------------------------------------------------ layout */
 
 .boot {
+  width: min(100%, var(--shell-w));
   min-height: 100dvh;
+  margin-inline: auto;
   display: grid;
   place-items: center;
-  background: var(--bg);
-  padding: 1rem;
+  padding: 2rem;
+  background: radial-gradient(135% 70% at 50% 0%, #e6f2de 0%, #cfe3c6 55%, #b9d3ac 100%);
 }
 
-.boot-card {
-  border-radius: 1.5rem;
-  background: var(--surface);
-  border: 2px solid var(--border-soft);
-  padding: 1.5rem 2rem;
-  font-weight: 800;
+.boot-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+}
+
+.boot-logo {
+  width: 4.5rem;
+  height: 4.5rem;
+  display: grid;
+  place-items: center;
+  border-radius: 1.375rem;
+  background: var(--brand);
+  color: #fff;
+  box-shadow: 0 16px 30px -12px rgba(39, 77, 25, 0.5);
+  animation: bootBreath 2s ease-in-out infinite;
+}
+
+.boot-text {
+  text-align: center;
+}
+
+.boot-name {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 1.375rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--brand-deep);
+}
+
+.boot-sub {
+  margin: 0.125rem 0 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--ink-mute);
+}
+
+.boot-dots {
+  display: flex;
+  gap: 0.4375rem;
+  margin-top: 0.25rem;
+}
+
+.boot-dots span {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  background: var(--brand);
+  animation: bootPulse 1.2s ease-in-out infinite;
+}
+
+.boot-dots span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.boot-dots span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes bootBreath {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes bootPulse {
+  0%,
+  80%,
+  100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  40% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .boot-logo {
+    transform: none;
+  }
+
+  .boot-dots span {
+    opacity: 0.7;
+    transform: none;
+  }
 }
 
 .skip-link {
