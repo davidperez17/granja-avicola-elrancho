@@ -23,6 +23,7 @@
 }
 
 :root {
+  color-scheme: light;
   --ink: #0e1b09;
   --ink-soft: #274d19;
   --ink-mute: #4e7a38;
@@ -52,7 +53,7 @@
 
 html {
   color: var(--ink);
-  background: #dbe9d6;
+  background-color: #c5ddba;
   scroll-behavior: smooth;
 }
 
@@ -64,6 +65,8 @@ body {
   line-height: 1.5;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
+  background:
+    radial-gradient(135% 70% at 50% -10%, #e6f2de 0%, #cfe3c6 48%, #b9d3ac 100%) fixed;
 }
 
 button,
@@ -168,6 +171,16 @@ a:focus-visible {
   outline: none;
 }
 
+/* En pantallas anchas el "telefono" se enmarca como dispositivo sobre el fondo sage.
+   Sin margen vertical: la barra inferior fija sigue alineada con la columna. */
+@media (min-width: 33rem) {
+  .shell,
+  .welcome,
+  .auth {
+    box-shadow: 0 0 0 1px rgba(39, 77, 25, 0.1), 0 24px 60px -28px rgba(14, 27, 9, 0.55);
+  }
+}
+
 /* ------------------------------------------------------------------ screen */
 
 .screen {
@@ -231,6 +244,8 @@ a:focus-visible {
 .sync-tag {
   display: inline-flex;
   align-items: center;
+  flex: none;
+  white-space: nowrap;
   font-size: 0.75rem;
   font-weight: 700;
   color: var(--brand);

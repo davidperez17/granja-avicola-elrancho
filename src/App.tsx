@@ -93,11 +93,16 @@ function isNetworkError(error: unknown) {
 }
 
 function formatMoney(value: number) {
-  return new Intl.NumberFormat('es-DO', { style: 'currency', currency: 'DOP', maximumFractionDigits: 0 }).format(value || 0);
+  return new Intl.NumberFormat('es-GT', {
+    style: 'currency',
+    currency: 'GTQ',
+    currencyDisplay: 'narrowSymbol',
+    maximumFractionDigits: 0
+  }).format(value || 0);
 }
 
 function formatNumber(value: number) {
-  return new Intl.NumberFormat('es-DO').format(value || 0);
+  return new Intl.NumberFormat('es-GT').format(value || 0);
 }
 
 function collectionProduction(collection: Record<string, number>) {
@@ -804,7 +809,7 @@ function ExpensePanel({
       <label className="field">
         <span className="field-label">Monto</span>
         <div className="amount-input">
-          <span className="amount-symbol number-text">$</span>
+          <span className="amount-symbol number-text">Q</span>
           <input
             className="field-control field-control-amount number-text"
             type="number"
@@ -950,7 +955,7 @@ function InventarioScreen() {
 
   return (
     <section className="screen screen-pad">
-      <ScreenHeader title="Inventario" sub={updated ? `Actualizado ${new Date(updated).toLocaleString('es-DO')}` : 'Existencia por categoria'} />
+      <ScreenHeader title="Inventario" sub={updated ? `Actualizado ${new Date(updated).toLocaleString('es-GT')}` : 'Existencia por categoria'} />
 
       <div className="feature-banner">
         <p className="feature-banner-label">Existencia total</p>
