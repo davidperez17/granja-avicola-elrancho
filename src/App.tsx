@@ -263,11 +263,11 @@ function ChipGroup<T extends string>({
   );
 }
 
-function DateField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+function DateField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <label className="field">
-      <span className="field-label">{label}</span>
-      <input className="field-control" type="date" max={dateToday()} value={value} onChange={(event) => onChange(event.target.value)} />
+    <label className="date-field">
+      <span className="field-label">Fecha</span>
+      <input className="field-control date-input" type="date" max={dateToday()} value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }
@@ -676,7 +676,7 @@ function CollectionPanel({
 
   return (
     <div className="panel-flow">
-      <DateField label="Fecha de recoleccion" value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
+      <DateField value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
       <p className="seg-help">Escribe la cantidad o usa los botones por tamano.</p>
       <div className="stack">
         {categoryOrder.map((key) => (
@@ -766,7 +766,7 @@ function SalePanel({
 
   return (
     <div className="panel-flow">
-      <DateField label="Fecha de venta" value={form.saleDate} onChange={(value) => setForm({ ...form, saleDate: value })} />
+      <DateField value={form.saleDate} onChange={(value) => setForm({ ...form, saleDate: value })} />
       <p className="seg-help">Cada venta descuenta inventario al guardar.</p>
 
       <ChipGroup
@@ -794,8 +794,9 @@ function SalePanel({
             type="number"
             min="1"
             inputMode="numeric"
-            value={item.quantity}
-            onChange={(event) => updateItem({ quantity: Number(event.target.value || 1) })}
+            placeholder="1"
+            value={item.quantity === 0 ? '' : item.quantity}
+            onChange={(event) => updateItem({ quantity: Math.max(0, Math.floor(Number(event.target.value || 0))) })}
           />
         </label>
         <label className="field">
@@ -806,8 +807,9 @@ function SalePanel({
             min="0"
             step="0.01"
             inputMode="decimal"
-            value={item.unitPrice}
-            onChange={(event) => updateItem({ unitPrice: Number(event.target.value || 0) })}
+            placeholder="0"
+            value={item.unitPrice === 0 ? '' : item.unitPrice}
+            onChange={(event) => updateItem({ unitPrice: Math.max(0, Number(event.target.value || 0)) })}
           />
         </label>
       </div>
@@ -831,7 +833,13 @@ function SalePanel({
         </p>
       )}
 
-      <button type="button" className="btn btn-accent btn-block btn-lg" onClick={submit} disabled={loading} aria-busy={loading}>
+      <button
+        type="button"
+        className="btn btn-accent btn-block btn-lg"
+        onClick={submit}
+        disabled={loading || item.quantity < 1}
+        aria-busy={loading}
+      >
         <CircleDollarSign size={20} />
         {loading ? 'Guardando...' : 'Registrar venta'}
       </button>
@@ -876,7 +884,7 @@ function ExpensePanel({
 
   return (
     <div className="panel-flow">
-      <DateField label="Fecha del gasto" value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
+      <DateField value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
       <p className="seg-help">Registra compras y costos del dia.</p>
 
       <ChipGroup
