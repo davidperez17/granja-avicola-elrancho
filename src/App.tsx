@@ -23,6 +23,7 @@ import {
   Settings,
   ShieldCheck,
   Tag,
+  TrendingDown,
   TrendingUp,
   Users,
   Wifi,
@@ -107,6 +108,20 @@ function formatNumber(value: number) {
 
 function collectionProduction(collection: Record<string, number>) {
   return categoryOrder.reduce((sum, key) => sum + Number(collection[key] || 0), 0);
+}
+
+type ProfitTrend = { label: string; tone: 'good' | 'bad' | 'neutral'; dir: 'up' | 'down' | null };
+
+function profitTrend(profit: number, yesterday: number): ProfitTrend {
+  if (yesterday !== 0) {
+    const pct = Math.round(((profit - yesterday) / Math.abs(yesterday)) * 100);
+    if (pct > 0) return { label: `+${pct}% vs ayer`, tone: 'good', dir: 'up' };
+    if (pct < 0) return { label: `${pct}% vs ayer`, tone: 'bad', dir: 'down' };
+    return { label: 'Igual que ayer', tone: 'neutral', dir: null };
+  }
+  if (profit > 0) return { label: 'Positiva', tone: 'good', dir: 'up' };
+  if (profit < 0) return { label: 'Negativa', tone: 'bad', dir: 'down' };
+  return { label: 'Sin movimiento', tone: 'neutral', dir: null };
 }
 
 /* ---------------------------------------------------------------- primitives */
@@ -453,8 +468,17 @@ function HoyScreen({ user, online }: { user: User; online: boolean }) {
   const rotos = data ? Number(data.collection.rotos || 0) : 0;
 
   return (
-    <section className="screen">
+    <section className="screen screen-hoy">
       <div className="hoy-hero">
+        <img
+          className="hoy-hero-img"
+          src="/brand/hero.jpg"
+          alt=""
+          aria-hidden="true"
+          onError={(event) => {
+            event.currentTarget.style.display = 'none';
+          }}
+        />
         <div className="hoy-hero-row">
           <div className="hoy-greeting">
             <span className="hoy-avatar" aria-hidden="true">
@@ -480,12 +504,17 @@ function HoyScreen({ user, online }: { user: User; online: boolean }) {
       <div className="hoy-feature">
         <div className="hoy-feature-top">
           <span className="hoy-feature-label">Ganancia de hoy</span>
-          {data && (
-            <span className={`pill ${data.profit >= 0 ? 'pill-online' : 'pill-danger'}`}>
-              <TrendingUp size={13} />
-              {data.profit >= 0 ? 'Positiva' : 'Negativa'}
-            </span>
-          )}
+          {data &&
+            (() => {
+              const trend = profitTrend(data.profit, data.profitYesterday);
+              return (
+                <span className={`pill ${trend.tone === 'good' ? 'pill-online' : trend.tone === 'bad' ? 'pill-danger' : 'pill-neutral'}`}>
+                  {trend.dir === 'up' && <TrendingUp size={13} />}
+                  {trend.dir === 'down' && <TrendingDown size={13} />}
+                  {trend.label}
+                </span>
+              );
+            })()}
         </div>
         {data ? <p className="hoy-feature-value number-text">{formatMoney(data.profit)}</p> : <Skeleton className="skeleton-feature" />}
       </div>

@@ -193,6 +193,12 @@ a:focus-visible {
   padding: calc(1.5rem + env(safe-area-inset-top)) 1.125rem 0;
 }
 
+/* Hoy: el hero verde sangra a los bordes (margin negativo), pero el resto
+   del contenido necesita respiro lateral igual que las demas pantallas. */
+.screen-hoy {
+  padding-inline: 1.125rem;
+}
+
 .screen-head {
   display: flex;
   align-items: flex-start;
@@ -277,6 +283,12 @@ a:focus-visible {
   background: var(--color-mint-100);
   border: 1px solid var(--border);
   color: var(--brand);
+}
+
+.pill-neutral {
+  background: #eef1ec;
+  border: 1px solid #d7ddd1;
+  color: var(--ink-soft);
 }
 
 .pill-offline,
@@ -408,6 +420,7 @@ a:focus-visible {
 .field {
   display: grid;
   gap: 0.5rem;
+  min-width: 0;
 }
 
 .field-label {
@@ -427,6 +440,7 @@ a:focus-visible {
 .field-control {
   min-height: 3.25rem;
   width: 100%;
+  min-width: 0;
   border-radius: var(--radius);
   border: 1px solid var(--border);
   background: var(--surface);
@@ -434,6 +448,24 @@ a:focus-visible {
   padding: 0 1rem;
   font-size: 1rem;
   transition: border-color 160ms ease;
+}
+
+/* input[type=date] trae un ancho intrinseco propio que desborda el grid en movil.
+   appearance:none + min-width:0 lo obligan a respetar el ancho del contenedor. */
+.field-control[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+}
+
+.field-control[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+
+.field-control[type="date"]::-webkit-calendar-picker-indicator {
+  margin-inline-start: auto;
+  cursor: pointer;
+  opacity: 0.65;
 }
 
 .field-control::placeholder {
@@ -809,20 +841,34 @@ a:focus-visible {
 .hoy-hero {
   position: relative;
   margin: calc(-1.5rem - env(safe-area-inset-top)) -1.125rem 0;
-  padding: calc(3.75rem + env(safe-area-inset-top)) 1.375rem 3rem;
+  padding: calc(3.75rem + env(safe-area-inset-top)) 1.375rem 1.75rem;
   background: linear-gradient(135deg, var(--brand) 0%, var(--brand-bright) 100%);
   overflow: hidden;
 }
 
+/* Imagen de cabecera opcional: colocar en public/brand/hero.jpg.
+   Si no existe, onError la oculta y queda el degradado verde. */
+.hoy-hero-img {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Capa de legibilidad sobre la imagen/degradado para que el texto blanco resalte. */
 .hoy-hero::before {
   content: "";
   position: absolute;
   inset: 0;
-  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.07) 0 10px, rgba(255, 255, 255, 0) 10px 24px);
+  z-index: 1;
+  background: linear-gradient(180deg, rgba(39, 77, 25, 0.32) 0%, rgba(20, 38, 13, 0.58) 100%);
 }
 
 .hoy-hero-row {
   position: relative;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -874,7 +920,7 @@ a:focus-visible {
 }
 
 .hoy-feature {
-  margin: -2.25rem 0 0;
+  margin: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);

@@ -241,7 +241,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 });
 
 app.get('/api/dashboard/today', requireAuth, requireRole('admin'), async (_req, res) => {
-  const [collection, sales, expenses, inventory] = await Promise.all([
+  const [collection, sales, expenses, inventory, salesYesterday, expensesYesterday] = await Promise.all([
     queryOne(
       `SELECT COALESCE(sum(pequeno),0)::int pequeno, COALESCE(sum(mediano),0)::int mediano,
               COALESCE(sum(grande),0)::int grande, COALESCE(sum(extra_grande),0)::int extra_grande,
@@ -250,10 +250,15 @@ app.get('/api/dashboard/today', requireAuth, requireRole('admin'), async (_req, 
     ),
     queryOne('SELECT COALESCE(sum(total),0)::float total, count(*)::int count FROM sales WHERE sale_date = CURRENT_DATE'),
     queryOne('SELECT COALESCE(sum(amount),0)::float total, count(*)::int count FROM expenses WHERE expense_date = CURRENT_DATE'),
-    query('SELECT category, quantity FROM inventory ORDER BY category')
+    query('SELECT category, quantity FROM inventory ORDER BY category'),
+    queryOne("SELECT COALESCE(sum(total),0)::float total FROM sales WHERE sale_date = CURRENT_DATE - INTERVAL '1 day'"),
+    queryOne("SELECT COALESCE(sum(amount),0)::float total FROM expenses WHERE expense_date = CURRENT_DATE - INTERVAL '1 day'")
   ]);
 
-  res.json({ collection, sales, expenses, inventory, profit: Number(sales?.total || 0) - Number(expenses?.total || 0) });
+  const profit = Number(sales?.total || 0) - Number(expenses?.total || 0);
+  const profitYesterday = Number(salesYesterday?.total || 0) - Number(expensesYesterday?.total || 0);
+
+  res.json({ collection, sales, expenses, inventory, profit, profitYesterday });
 });
 
 app.get('/api/inventory', requireAuth, requireRole('admin'), async (_req, res) => {

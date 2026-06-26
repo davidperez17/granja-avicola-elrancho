@@ -47,6 +47,7 @@ export function getDashboard() {
     expenses: { total: number; count: number };
     inventory: Array<{ category: string; quantity: number }>;
     profit: number;
+    profitYesterday: number;
   }>('/api/dashboard/today');
 }
 
