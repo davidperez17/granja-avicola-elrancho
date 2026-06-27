@@ -1242,7 +1242,7 @@ const ReportChart = lazy(() => import('./components/ReportChart'));
 const reportPeriods: Array<{ value: 7 | 30 | 365; label: string }> = [
   { value: 7, label: '7 dias' },
   { value: 30, label: '30 dias' },
-  { value: 365, label: 'Ano' }
+  { value: 365, label: 'Año' }
 ];
 
 function ReportesScreen() {
@@ -1292,7 +1292,7 @@ function ReportesScreen() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
     anchor.href = url;
-    anchor.download = `reporte-elrancho-${period === 365 ? 'ano' : `${period}dias`}.csv`;
+    anchor.download = `reporte-elrancho-${period === 365 ? 'año' : `${period}dias`}.csv`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
