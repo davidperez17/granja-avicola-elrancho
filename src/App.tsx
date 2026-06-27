@@ -2477,16 +2477,6 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
 
       <main id="main" className="shell-main" tabIndex={-1}>
         <SyncBanner online={online} pending={pending} onSync={runSync} />
-        {isAdmin && pushStatus && !bannerDismissed && (
-          <PushBanner
-            status={pushStatus}
-            canInstall={Boolean(deferredPrompt)}
-            onEnable={enableNotifications}
-            onInstall={installApp}
-            onOpenSettings={() => setNotifSettingsOpen(true)}
-            onDismiss={dismissBanner}
-          />
-        )}
         {view === 'hoy' && isAdmin && (
           <HoyScreen user={user} online={online} unread={unread} onOpenNotifications={openNotifications} />
         )}
@@ -2529,6 +2519,17 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
       </main>
 
       {toast && <Toast title={toast.title} detail={toast.detail} onDone={() => setToast(null)} />}
+
+      {isAdmin && pushStatus && !bannerDismissed && (
+        <PushBanner
+          status={pushStatus}
+          canInstall={Boolean(deferredPrompt)}
+          onEnable={enableNotifications}
+          onInstall={installApp}
+          onOpenSettings={() => setNotifSettingsOpen(true)}
+          onDismiss={dismissBanner}
+        />
+      )}
 
       <NotificationsSheet open={notifOpen} notifications={notifications} onClose={() => setNotifOpen(false)} />
 
