@@ -87,8 +87,9 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90, `carton` = 30.
    Venta y Gasto (estos dos solo admin). **Galpón** = botones en fila/columnas
    (`.galpon-list` flex-wrap / `.galpon-option`: nombre + aves apilados dentro, check al seleccionar);
    **Fecha** campo estándar. Galpón primero. La venta
-   tiene producto **Cajón (360) · Oferta (90) · Cartón (30)**; cartón/cajón con categoría libre,
-   oferta fuerza `grande`. Huevos/unidad centralizados en `eggsPerUnit()` (cliente y server).
+   tiene producto **Cajón (360) · Oferta (90) · Cartón (30)**; **los tres con categoría libre**
+   (las 5: P/M/G/XG/J). Huevos/unidad centralizados en `eggsPerUnit()` (cliente y server, depende
+   solo del producto, no de la categoría).
 3. **Hoy** (admin): saludo **según la hora** + imagen hero, ganancia con **tendencia real vs ayer (%)**, stats
    (producción con **% postura**, ventas, gastos), inventario disponible y **"Últimos registros"**
    con nombre del trabajador, galpón y hora.
