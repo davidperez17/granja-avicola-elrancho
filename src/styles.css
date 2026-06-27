@@ -2462,6 +2462,95 @@ button.settings-row:hover:not(:disabled) {
   }
 }
 
+/* --------------------------------------------------------------- registros */
+
+.editor-body {
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 0.25rem;
+}
+
+.reg-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 0.875rem;
+}
+
+.reg-card-voided {
+  opacity: 0.5;
+}
+
+.reg-card-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.reg-card-title {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.reg-card-meta {
+  font-size: 0.75rem;
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reg-card-value {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.reg-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: none;
+}
+
+.icon-btn {
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 0.625rem;
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms ease;
+}
+
+.icon-btn:hover {
+  background: var(--color-mint-50);
+}
+
+.icon-btn:active {
+  transform: scale(0.92);
+}
+
+.icon-btn-danger {
+  color: var(--danger);
+  border-color: #f0c5c5;
+}
+
+.icon-btn-danger:hover {
+  background: #fdf0f0;
+}
+
 /* --------------------------------------------------------------- skeleton */
 
 .skeleton {

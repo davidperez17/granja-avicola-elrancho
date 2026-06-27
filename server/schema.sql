@@ -138,6 +138,12 @@ CREATE TABLE IF NOT EXISTS galpones (
 ALTER TABLE daily_collections ADD COLUMN IF NOT EXISTS galpon_id uuid REFERENCES galpones(id);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS galpon_id uuid REFERENCES galpones(id);
 
+-- Soft delete (anular): NULL = activo. Los registros anulados quedan para
+-- auditoria pero no cuentan en totales, reportes ni inventario.
+ALTER TABLE daily_collections ADD COLUMN IF NOT EXISTS voided_at timestamptz;
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS voided_at timestamptz;
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS voided_at timestamptz;
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,

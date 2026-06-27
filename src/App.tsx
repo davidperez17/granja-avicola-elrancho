@@ -25,6 +25,7 @@ import {
   Settings,
   ShieldCheck,
   Tag,
+  Trash2,
   TrendingDown,
   TrendingUp,
   Users,
@@ -41,10 +42,13 @@ import {
   getDashboard,
   getGalpones,
   getInventory,
+  getCollectionsAll,
+  getExpensesAll,
   getMe,
   getNotifications,
   getRegistros,
   getReports,
+  getSalesAll,
   getUsers,
   login,
   logout,
@@ -53,8 +57,14 @@ import {
   postExpense,
   postSale,
   resetPassword,
+  updateCollection,
+  updateExpense,
   updateGalpon,
-  updateUser
+  updateSale,
+  updateUser,
+  voidCollection,
+  voidExpense,
+  voidSale
 } from './lib/api';
 import { enqueueOperation, getQueuedOperations, syncQueuedOperations } from './lib/offline';
 import { getPushStatus, subscribeToPush, unsubscribeFromPush, type PushStatus } from './lib/push';
@@ -63,12 +73,15 @@ import type {
   AppNotification,
   CategoryKey,
   CollectionPayload,
+  CollectionRecord,
   CreateUserPayload,
   ExpensePayload,
+  ExpenseRecord,
   Galpon,
   RegistroItem,
   Role,
   SalePayload,
+  SaleRecord,
   User
 } from './types';
 
@@ -1522,6 +1535,7 @@ function AjustesScreen({
   onSync,
   onOpenUsers,
   onOpenGalpones,
+  onOpenRegistros,
   onOpenNotifSettings,
   onLogout
 }: {
@@ -1531,6 +1545,7 @@ function AjustesScreen({
   onSync: () => void;
   onOpenUsers: () => void;
   onOpenGalpones: () => void;
+  onOpenRegistros: () => void;
   onOpenNotifSettings: () => void;
   onLogout: () => void;
 }) {
@@ -1567,6 +1582,14 @@ function AjustesScreen({
                 <Bell size={18} />
               </span>
               <span className="settings-label">Notificaciones</span>
+              <ChevronRight size={18} className="settings-chevron" />
+            </button>
+            <button type="button" className="settings-row" onClick={onOpenRegistros}>
+              <span className="settings-icon" aria-hidden="true">
+                <ClipboardList size={18} />
+              </span>
+              <span className="settings-label">Registros</span>
+              <span className="settings-meta">Historial · editar · anular</span>
               <ChevronRight size={18} className="settings-chevron" />
             </button>
             <button type="button" className="settings-row" onClick={onOpenGalpones}>
@@ -2275,9 +2298,576 @@ function SyncBanner({ online, pending, onSync }: { online: boolean; pending: num
   );
 }
 
+/* -------------------------------------------------------- registros (admin) */
+
+type RegTab = 'recoleccion' | 'venta' | 'gasto';
+
+const isoDate = (value: string) => (value ? value.slice(0, 10) : dateToday());
+const showDate = (value: string) => new Date(value).toLocaleDateString('es-GT', { day: '2-digit', month: 'short', year: 'numeric' });
+
+function EditorSheet({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [onClose]);
+  return createPortal(
+    <div className="notif-scrim" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
+      <div className="notif-sheet" onClick={(event) => event.stopPropagation()}>
+        <div className="notif-head">
+          <h2 className="notif-title">{title}</h2>
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="editor-body">{children}</div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+function CollectionEditor({
+  record,
+  galpones,
+  onClose,
+  onSaved,
+  onError
+}: {
+  record: CollectionRecord;
+  galpones: Galpon[];
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [form, setForm] = useState<CollectionPayload>(() => ({
+    collectionDate: isoDate(record.collection_date),
+    pequeno: record.pequeno,
+    mediano: record.mediano,
+    grande: record.grande,
+    extraGrande: record.extra_grande,
+    jumbo: record.jumbo,
+    rotos: record.rotos,
+    galponId: record.galpon_id,
+    notes: record.notes ?? ''
+  }));
+  const [saving, setSaving] = useState(false);
+  const production = categoryOrder.reduce((sum, key) => sum + Number(form[collectionFieldByCategory[key]] || 0), 0);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateCollection(record.id, form);
+      onSaved();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'No se pudo guardar.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <EditorSheet title="Editar recoleccion" onClose={onClose}>
+      <div className="panel-flow">
+        <DateField value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
+        <GalponSelect galpones={galpones} value={form.galponId} onChange={(id) => setForm({ ...form, galponId: id })} />
+        <div className="egg-card">
+          <p className="egg-card-title">Huevos por clasificacion</p>
+          <div className="egg-grid">
+            {eggColumns.map((col) => {
+              const field = collectionFieldByCategory[col.key];
+              const value = Number(form[field] || 0);
+              return (
+                <label key={col.key} className="egg-col">
+                  <span className="egg-col-letter">{col.letter}</span>
+                  <input
+                    className="egg-input number-text"
+                    type="number"
+                    min="0"
+                    inputMode="numeric"
+                    placeholder="0"
+                    aria-label={categoryLabels[col.key]}
+                    value={value === 0 ? '' : value}
+                    onChange={(event) => setForm({ ...form, [field]: Math.max(0, Math.floor(Number(event.target.value || 0))) })}
+                  />
+                </label>
+              );
+            })}
+          </div>
+        </div>
+        <div className="total-bar">
+          <span className="total-bar-label">Total del dia</span>
+          <span className="total-bar-value number-text">{formatNumber(production)}</span>
+        </div>
+        <label className="field">
+          <span className="field-label">Huevos rotos</span>
+          <input
+            className="field-control number-text"
+            type="number"
+            min="0"
+            inputMode="numeric"
+            placeholder="0"
+            value={form.rotos === 0 ? '' : form.rotos}
+            onChange={(event) => setForm({ ...form, rotos: Math.max(0, Math.floor(Number(event.target.value || 0))) })}
+          />
+        </label>
+        <p className="seg-help">El inventario se ajusta por la diferencia con los valores anteriores.</p>
+        <button type="button" className="btn btn-primary btn-block btn-lg" onClick={save} disabled={saving} aria-busy={saving}>
+          <Check size={20} />
+          {saving ? 'Guardando...' : 'Guardar cambios'}
+        </button>
+      </div>
+    </EditorSheet>
+  );
+}
+
+function SaleEditor({
+  record,
+  onClose,
+  onSaved,
+  onError
+}: {
+  record: SaleRecord;
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const first = record.items[0];
+  const [form, setForm] = useState<SalePayload>(() => ({
+    saleDate: isoDate(record.sale_date),
+    customer: record.customer ?? '',
+    notes: record.notes ?? '',
+    items: [
+      {
+        productType: first?.product_type ?? 'cajon',
+        category: first?.category ?? 'grande',
+        quantity: first?.quantity ?? 1,
+        unitPrice: first ? Number(first.unit_price) : 0
+      }
+    ]
+  }));
+  const [saving, setSaving] = useState(false);
+  const item = form.items[0];
+  const eggs = (item.productType === 'oferta_grande' ? 90 : 360) * item.quantity;
+  const total = item.quantity * item.unitPrice;
+
+  function updateItem(next: Partial<SalePayload['items'][number]>) {
+    const updated = { ...item, ...next };
+    if (updated.productType === 'oferta_grande') updated.category = 'grande';
+    setForm({ ...form, items: [updated] });
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateSale(record.id, form);
+      onSaved();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'No se pudo guardar la venta.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <EditorSheet title="Editar venta" onClose={onClose}>
+      <div className="panel-flow">
+        <DateField value={form.saleDate} onChange={(value) => setForm({ ...form, saleDate: value })} />
+        <ChipGroup
+          label="Producto"
+          value={item.productType}
+          onChange={(value) => updateItem({ productType: value })}
+          options={[
+            { value: 'cajon', label: 'Cajon · 360' },
+            { value: 'oferta_grande', label: 'Oferta · 90' }
+          ]}
+        />
+        <ChipGroup
+          label="Categoria"
+          value={item.category}
+          onChange={(value) => updateItem({ category: value })}
+          options={categoryOrder.map((key) => ({ value: key, label: categoryLabels[key] }))}
+        />
+        <div className="duo-grid">
+          <label className="field">
+            <span className="field-label">Cantidad</span>
+            <input
+              className="field-control number-text"
+              type="number"
+              min="1"
+              inputMode="numeric"
+              placeholder="1"
+              value={item.quantity === 0 ? '' : item.quantity}
+              onChange={(event) => updateItem({ quantity: Math.max(0, Math.floor(Number(event.target.value || 0))) })}
+            />
+          </label>
+          <label className="field">
+            <span className="field-label">Precio unitario</span>
+            <input
+              className="field-control number-text"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              placeholder="0"
+              value={item.unitPrice === 0 ? '' : item.unitPrice}
+              onChange={(event) => updateItem({ unitPrice: Math.max(0, Number(event.target.value || 0)) })}
+            />
+          </label>
+        </div>
+        <label className="field">
+          <span className="field-label">Cliente (opcional)</span>
+          <input className="field-control" value={form.customer} onChange={(event) => setForm({ ...form, customer: event.target.value })} />
+        </label>
+        <div className="total-card">
+          <div>
+            <p className="total-card-label">Total venta</p>
+            <p className="total-card-meta">{formatNumber(eggs)} huevos</p>
+          </div>
+          <p className="total-card-value number-text">{formatMoney(total)}</p>
+        </div>
+        <p className="seg-help">El inventario se ajusta por la diferencia (devuelve lo anterior y descuenta lo nuevo).</p>
+        <button type="button" className="btn btn-accent btn-block btn-lg" onClick={save} disabled={saving || item.quantity < 1} aria-busy={saving}>
+          <Check size={20} />
+          {saving ? 'Guardando...' : 'Guardar cambios'}
+        </button>
+      </div>
+    </EditorSheet>
+  );
+}
+
+function ExpenseEditor({
+  record,
+  galpones,
+  onClose,
+  onSaved,
+  onError
+}: {
+  record: ExpenseRecord;
+  galpones: Galpon[];
+  onClose: () => void;
+  onSaved: () => void;
+  onError: (message: string) => void;
+}) {
+  const [form, setForm] = useState<ExpensePayload>(() => ({
+    expenseDate: isoDate(record.expense_date),
+    category: record.category,
+    supplier: record.supplier ?? '',
+    amount: Number(record.amount),
+    galponId: record.galpon_id,
+    notes: record.notes ?? ''
+  }));
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await updateExpense(record.id, form);
+      onSaved();
+    } catch (error) {
+      onError(error instanceof Error ? error.message : 'No se pudo guardar el gasto.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <EditorSheet title="Editar gasto" onClose={onClose}>
+      <div className="panel-flow">
+        <DateField value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
+        <GalponSelect galpones={galpones} value={form.galponId} onChange={(id) => setForm({ ...form, galponId: id })} />
+        <ChipGroup
+          label="Tipo de gasto"
+          value={form.category}
+          onChange={(value) => setForm({ ...form, category: value })}
+          options={expenseCategories.map((category) => ({ value: category, label: category }))}
+        />
+        <label className="field">
+          <span className="field-label">Monto</span>
+          <div className="amount-input">
+            <span className="amount-symbol number-text">Q</span>
+            <input
+              className="field-control field-control-amount number-text"
+              type="number"
+              min="0"
+              step="0.01"
+              inputMode="decimal"
+              value={form.amount === 0 ? '' : form.amount}
+              placeholder="0"
+              onChange={(event) => setForm({ ...form, amount: Math.max(0, Number(event.target.value || 0)) })}
+            />
+          </div>
+        </label>
+        <label className="field">
+          <span className="field-label">Proveedor o nota (opcional)</span>
+          <input className="field-control" value={form.supplier} onChange={(event) => setForm({ ...form, supplier: event.target.value })} />
+        </label>
+        <button type="button" className="btn btn-primary btn-block btn-lg" onClick={save} disabled={saving || form.amount <= 0} aria-busy={saving}>
+          <Check size={20} />
+          {saving ? 'Guardando...' : 'Guardar cambios'}
+        </button>
+      </div>
+    </EditorSheet>
+  );
+}
+
+function RegRow({
+  title,
+  value,
+  valueClass,
+  meta,
+  voided,
+  onEdit,
+  onVoid,
+  confirming,
+  onConfirmVoid,
+  onCancelVoid
+}: {
+  title: string;
+  value: string;
+  valueClass?: string;
+  meta: React.ReactNode;
+  voided: boolean;
+  onEdit: () => void;
+  onVoid: () => void;
+  confirming: boolean;
+  onConfirmVoid: () => void;
+  onCancelVoid: () => void;
+}) {
+  return (
+    <div className={`reg-card ${voided ? 'reg-card-voided' : ''}`}>
+      <div className="reg-card-main">
+        <span className="reg-card-title">{title}</span>
+        <span className="reg-card-meta">{meta}</span>
+      </div>
+      <span className={`reg-card-value number-text ${valueClass ?? ''}`}>{value}</span>
+      {!voided && !confirming && (
+        <div className="reg-card-actions">
+          <button type="button" className="icon-btn" aria-label="Editar" onClick={onEdit}>
+            <Pencil size={17} />
+          </button>
+          <button type="button" className="icon-btn icon-btn-danger" aria-label="Anular" onClick={onVoid}>
+            <Trash2 size={17} />
+          </button>
+        </div>
+      )}
+      {!voided && confirming && (
+        <div className="reg-card-actions">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={onCancelVoid}>
+            Cancelar
+          </button>
+          <button type="button" className="btn btn-danger-solid btn-sm" onClick={onConfirmVoid}>
+            Anular
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type EditTarget =
+  | { kind: 'recoleccion'; record: CollectionRecord }
+  | { kind: 'venta'; record: SaleRecord }
+  | { kind: 'gasto'; record: ExpenseRecord };
+
+function RegistrosScreen({
+  galpones,
+  onBack,
+  onToast,
+  onChanged
+}: {
+  galpones: Galpon[];
+  onBack: () => void;
+  onToast: (detail: string) => void;
+  onChanged: () => void;
+}) {
+  const [tab, setTab] = useState<RegTab>('recoleccion');
+  const [collections, setCollections] = useState<CollectionRecord[] | null>(null);
+  const [sales, setSales] = useState<SaleRecord[] | null>(null);
+  const [expenses, setExpenses] = useState<ExpenseRecord[] | null>(null);
+  const [message, setMessage] = useState('');
+  const [editing, setEditing] = useState<EditTarget | null>(null);
+  const [confirmId, setConfirmId] = useState<string | null>(null);
+
+  async function load(which: RegTab) {
+    setMessage('');
+    try {
+      if (which === 'recoleccion') setCollections((await getCollectionsAll()).collections);
+      if (which === 'venta') setSales((await getSalesAll()).sales);
+      if (which === 'gasto') setExpenses((await getExpensesAll()).expenses);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo cargar el historial.');
+    }
+  }
+
+  useEffect(() => {
+    load(tab);
+    setConfirmId(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
+  function afterChange(detail: string) {
+    setEditing(null);
+    setConfirmId(null);
+    onToast(detail);
+    onChanged();
+    load(tab);
+  }
+
+  async function doVoid(kind: RegTab, id: string) {
+    setMessage('');
+    try {
+      if (kind === 'recoleccion') await voidCollection(id);
+      if (kind === 'venta') await voidSale(id);
+      if (kind === 'gasto') await voidExpense(id);
+      afterChange('Registro anulado');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo anular.');
+    }
+  }
+
+  const tabs: Array<{ key: RegTab; label: string }> = [
+    { key: 'recoleccion', label: 'Recoleccion' },
+    { key: 'venta', label: 'Ventas' },
+    { key: 'gasto', label: 'Gastos' }
+  ];
+
+  return (
+    <section className="screen screen-pad">
+      <div className="subscreen-top">
+        <button type="button" className="btn btn-ghost btn-icon" aria-label="Volver a ajustes" onClick={onBack}>
+          <ChevronRight size={20} className="flip" />
+        </button>
+        <div>
+          <h1 className="screen-title">Registros</h1>
+          <p className="screen-sub">Historial, editar y anular</p>
+        </div>
+      </div>
+
+      <div className="segmented" role="tablist" aria-label="Tipo de registro">
+        {tabs.map((item) => (
+          <button
+            key={item.key}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.key}
+            className="segment"
+            onClick={() => setTab(item.key)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+
+      {message && (
+        <p className="status-message status-message-danger" role="alert">
+          {message}
+        </p>
+      )}
+
+      {tab === 'recoleccion' && (
+        <div className="stack">
+          {!collections && [0, 1, 2].map((i) => <div key={i} className="reg-card"><Skeleton className="skeleton-line" /></div>)}
+          {collections && collections.length === 0 && <p className="empty-inline">Sin recolecciones.</p>}
+          {collections?.map((rec) => (
+            <RegRow
+              key={rec.id}
+              title={`+${formatNumber(rec.eggs)} huevos`}
+              value={`${formatNumber(rec.rotos)} rotos`}
+              meta={[showDate(rec.collection_date), rec.actor_name, rec.galpon_name].filter(Boolean).join(' · ')}
+              voided={Boolean(rec.voided_at)}
+              onEdit={() => setEditing({ kind: 'recoleccion', record: rec })}
+              onVoid={() => setConfirmId(rec.id)}
+              confirming={confirmId === rec.id}
+              onConfirmVoid={() => doVoid('recoleccion', rec.id)}
+              onCancelVoid={() => setConfirmId(null)}
+            />
+          ))}
+        </div>
+      )}
+
+      {tab === 'venta' && (
+        <div className="stack">
+          {!sales && [0, 1, 2].map((i) => <div key={i} className="reg-card"><Skeleton className="skeleton-line" /></div>)}
+          {sales && sales.length === 0 && <p className="empty-inline">Sin ventas.</p>}
+          {sales?.map((rec) => (
+            <RegRow
+              key={rec.id}
+              title={formatMoney(Number(rec.total))}
+              value={`${formatNumber(rec.eggs)} huevos`}
+              meta={[showDate(rec.sale_date), rec.customer, rec.actor_name].filter(Boolean).join(' · ')}
+              voided={Boolean(rec.voided_at)}
+              onEdit={() => setEditing({ kind: 'venta', record: rec })}
+              onVoid={() => setConfirmId(rec.id)}
+              confirming={confirmId === rec.id}
+              onConfirmVoid={() => doVoid('venta', rec.id)}
+              onCancelVoid={() => setConfirmId(null)}
+            />
+          ))}
+        </div>
+      )}
+
+      {tab === 'gasto' && (
+        <div className="stack">
+          {!expenses && [0, 1, 2].map((i) => <div key={i} className="reg-card"><Skeleton className="skeleton-line" /></div>)}
+          {expenses && expenses.length === 0 && <p className="empty-inline">Sin gastos.</p>}
+          {expenses?.map((rec) => (
+            <RegRow
+              key={rec.id}
+              title={`-${formatMoney(Number(rec.amount))}`}
+              value={rec.category}
+              meta={[showDate(rec.expense_date), rec.supplier, rec.actor_name].filter(Boolean).join(' · ')}
+              voided={Boolean(rec.voided_at)}
+              onEdit={() => setEditing({ kind: 'gasto', record: rec })}
+              onVoid={() => setConfirmId(rec.id)}
+              confirming={confirmId === rec.id}
+              onConfirmVoid={() => doVoid('gasto', rec.id)}
+              onCancelVoid={() => setConfirmId(null)}
+            />
+          ))}
+        </div>
+      )}
+
+      {editing?.kind === 'recoleccion' && (
+        <CollectionEditor
+          record={editing.record}
+          galpones={galpones}
+          onClose={() => setEditing(null)}
+          onSaved={() => afterChange('Recoleccion actualizada')}
+          onError={setMessage}
+        />
+      )}
+      {editing?.kind === 'venta' && (
+        <SaleEditor
+          record={editing.record}
+          onClose={() => setEditing(null)}
+          onSaved={() => afterChange('Venta actualizada')}
+          onError={setMessage}
+        />
+      )}
+      {editing?.kind === 'gasto' && (
+        <ExpenseEditor
+          record={editing.record}
+          galpones={galpones}
+          onClose={() => setEditing(null)}
+          onSaved={() => afterChange('Gasto actualizado')}
+          onError={setMessage}
+        />
+      )}
+    </section>
+  );
+}
+
 /* ------------------------------------------------------------------- shell */
 
-type ViewKey = 'hoy' | 'registrar' | 'historial' | 'inventario' | 'reportes' | 'ajustes' | 'usuarios' | 'galpones';
+type ViewKey = 'hoy' | 'registrar' | 'historial' | 'inventario' | 'reportes' | 'ajustes' | 'usuarios' | 'galpones' | 'registros';
 
 type RegistrarDraft = {
   seg: Seg;
@@ -2303,7 +2893,7 @@ type InstallPromptEvent = Event & {
 function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const isAdmin = user.role === 'admin';
   const nav = useMemo(() => NAV.filter((item) => (isAdmin ? !item.workerOnly : !item.adminOnly)), [isAdmin]);
-  const allowed: ViewKey[] = [...nav.map((item) => item.key), ...(isAdmin ? (['usuarios', 'galpones'] as ViewKey[]) : [])];
+  const allowed: ViewKey[] = [...nav.map((item) => item.key), ...(isAdmin ? (['usuarios', 'galpones', 'registros'] as ViewKey[]) : [])];
 
   const readHashView = (): ViewKey => {
     const hash = window.location.hash.replace('#', '') as ViewKey;
@@ -2504,8 +3094,17 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             onSync={runSync}
             onOpenUsers={() => selectView('usuarios')}
             onOpenGalpones={() => selectView('galpones')}
+            onOpenRegistros={() => selectView('registros')}
             onOpenNotifSettings={() => setNotifSettingsOpen(true)}
             onLogout={onLogout}
+          />
+        )}
+        {view === 'registros' && isAdmin && (
+          <RegistrosScreen
+            galpones={galpones}
+            onBack={() => selectView('ajustes')}
+            onChanged={loadGalpones}
+            onToast={(detail) => setToast({ title: 'Listo', detail })}
           />
         )}
         {view === 'usuarios' && isAdmin && (
@@ -2556,7 +3155,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             key={item.key}
             type="button"
             className="nav-item"
-            aria-current={view === item.key || (item.key === 'ajustes' && (view === 'usuarios' || view === 'galpones')) ? 'page' : undefined}
+            aria-current={view === item.key || (item.key === 'ajustes' && (view === 'usuarios' || view === 'galpones' || view === 'registros')) ? 'page' : undefined}
             onClick={() => selectView(item.key)}
           >
             {item.icon}

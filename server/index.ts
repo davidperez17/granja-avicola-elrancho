@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import express from 'express';
 import webpush from 'web-push';
+import type { PoolClient } from 'pg';
 import { z } from 'zod';
 import { pool, query, queryOne } from './db.js';
 import { requireAuth, requireRole, setSessionCookie, signSession, type AuthUser } from './auth.js';
@@ -256,6 +257,53 @@ async function addExpense(input: z.infer<typeof expenseSchema>, userId: string) 
   );
 }
 
+type CollectionAmounts = { pequeno: number; mediano: number; grande: number; extra_grande: number; jumbo: number };
+
+// Aplica las cantidades de una recoleccion al inventario. sign=+1 suma, sign=-1 resta.
+// El CHECK (quantity >= 0) impide dejar el inventario negativo (ej. anular algo ya vendido).
+async function applyCollectionToInventory(client: PoolClient, amounts: CollectionAmounts, sign: 1 | -1) {
+  for (const cat of categories) {
+    const amount = Number(amounts[cat] || 0) * sign;
+    if (amount !== 0) {
+      await client.query('UPDATE inventory SET quantity = quantity + $1, updated_at = now() WHERE category = $2', [amount, cat]);
+    }
+  }
+}
+
+// Devuelve al inventario los huevos de unas lineas de venta (al anular o editar).
+async function restoreSaleItemsToInventory(
+  client: PoolClient,
+  items: Array<{ category: string; quantity: number; eggs_per_unit: number }>
+) {
+  for (const it of items) {
+    await client.query('UPDATE inventory SET quantity = quantity + $1, updated_at = now() WHERE category = $2', [
+      it.eggs_per_unit * it.quantity,
+      it.category
+    ]);
+  }
+}
+
+// Descuenta del inventario los items de una venta, validando disponibilidad (con FOR UPDATE).
+async function deductSaleItemsFromInventory(client: PoolClient, items: z.infer<typeof saleItemSchema>[]) {
+  const requiredByCategory = new Map<string, number>();
+  for (const item of items) {
+    requiredByCategory.set(item.category, (requiredByCategory.get(item.category) || 0) + eggsPerUnit(item.productType) * item.quantity);
+  }
+  for (const [category, required] of requiredByCategory) {
+    const inv = await client.query<{ quantity: number }>('SELECT quantity FROM inventory WHERE category = $1 FOR UPDATE', [category]);
+    const available = inv.rows[0]?.quantity ?? 0;
+    if (available < required) {
+      throw new Error(`Inventario insuficiente para ${categoryLabel[category] ?? category}. Disponible: ${available}, requerido: ${required}.`);
+    }
+  }
+  for (const item of items) {
+    await client.query('UPDATE inventory SET quantity = quantity - $1, updated_at = now() WHERE category = $2', [
+      eggsPerUnit(item.productType) * item.quantity,
+      item.category
+    ]);
+  }
+}
+
 type Source = 'direct' | 'sync';
 
 async function notifyCollection(input: z.infer<typeof collectionSchema>, actorName: string, source: Source) {
@@ -386,13 +434,13 @@ app.get('/api/dashboard/today', requireAuth, requireRole('admin'), async (_req, 
       `SELECT COALESCE(sum(pequeno),0)::int pequeno, COALESCE(sum(mediano),0)::int mediano,
               COALESCE(sum(grande),0)::int grande, COALESCE(sum(extra_grande),0)::int extra_grande,
               COALESCE(sum(jumbo),0)::int jumbo, COALESCE(sum(rotos),0)::int rotos
-       FROM daily_collections WHERE collection_date = ${GT_TODAY}`
+       FROM daily_collections WHERE collection_date = ${GT_TODAY} AND voided_at IS NULL`
     ),
-    queryOne(`SELECT COALESCE(sum(total),0)::float total, count(*)::int count FROM sales WHERE sale_date = ${GT_TODAY}`),
-    queryOne(`SELECT COALESCE(sum(amount),0)::float total, count(*)::int count FROM expenses WHERE expense_date = ${GT_TODAY}`),
+    queryOne(`SELECT COALESCE(sum(total),0)::float total, count(*)::int count FROM sales WHERE sale_date = ${GT_TODAY} AND voided_at IS NULL`),
+    queryOne(`SELECT COALESCE(sum(amount),0)::float total, count(*)::int count FROM expenses WHERE expense_date = ${GT_TODAY} AND voided_at IS NULL`),
     query('SELECT category, quantity FROM inventory ORDER BY category'),
-    queryOne(`SELECT COALESCE(sum(total),0)::float total FROM sales WHERE sale_date = ${GT_TODAY} - INTERVAL '1 day'`),
-    queryOne(`SELECT COALESCE(sum(amount),0)::float total FROM expenses WHERE expense_date = ${GT_TODAY} - INTERVAL '1 day'`),
+    queryOne(`SELECT COALESCE(sum(total),0)::float total FROM sales WHERE sale_date = ${GT_TODAY} - INTERVAL '1 day' AND voided_at IS NULL`),
+    queryOne(`SELECT COALESCE(sum(amount),0)::float total FROM expenses WHERE expense_date = ${GT_TODAY} - INTERVAL '1 day' AND voided_at IS NULL`),
     queryOne('SELECT COALESCE(sum(bird_count),0)::int birds FROM galpones WHERE active')
   ]);
 
@@ -414,9 +462,9 @@ app.get('/api/reports', requireAuth, requireRole('admin'), async (req, res) => {
         `WITH days AS (
            SELECT generate_series(${GT_TODAY} - ($1::int - 1), ${GT_TODAY}, INTERVAL '1 day')::date AS d
          ),
-         col AS (SELECT collection_date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date > ${GT_TODAY} - $1::int GROUP BY collection_date),
-         sal AS (SELECT sale_date d, sum(total)::float total FROM sales WHERE sale_date > ${GT_TODAY} - $1::int GROUP BY sale_date),
-         exp AS (SELECT expense_date d, sum(amount)::float total FROM expenses WHERE expense_date > ${GT_TODAY} - $1::int GROUP BY expense_date)
+         col AS (SELECT collection_date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date > ${GT_TODAY} - $1::int AND voided_at IS NULL GROUP BY collection_date),
+         sal AS (SELECT sale_date d, sum(total)::float total FROM sales WHERE sale_date > ${GT_TODAY} - $1::int AND voided_at IS NULL GROUP BY sale_date),
+         exp AS (SELECT expense_date d, sum(amount)::float total FROM expenses WHERE expense_date > ${GT_TODAY} - $1::int AND voided_at IS NULL GROUP BY expense_date)
          SELECT to_char(days.d, 'DD/MM') label, days.d::text date,
                 COALESCE(col.eggs,0)::int eggs,
                 COALESCE(sal.total,0)::float sales,
@@ -434,9 +482,9 @@ app.get('/api/reports', requireAuth, requireRole('admin'), async (req, res) => {
         `WITH months AS (
            SELECT generate_series(date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months', date_trunc('month', ${GT_TODAY}), INTERVAL '1 month')::date AS d
          ),
-         col AS (SELECT date_trunc('month', collection_date)::date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' GROUP BY 1),
-         sal AS (SELECT date_trunc('month', sale_date)::date d, sum(total)::float total FROM sales WHERE sale_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' GROUP BY 1),
-         exp AS (SELECT date_trunc('month', expense_date)::date d, sum(amount)::float total FROM expenses WHERE expense_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' GROUP BY 1)
+         col AS (SELECT date_trunc('month', collection_date)::date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' AND voided_at IS NULL GROUP BY 1),
+         sal AS (SELECT date_trunc('month', sale_date)::date d, sum(total)::float total FROM sales WHERE sale_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' AND voided_at IS NULL GROUP BY 1),
+         exp AS (SELECT date_trunc('month', expense_date)::date d, sum(amount)::float total FROM expenses WHERE expense_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' AND voided_at IS NULL GROUP BY 1)
          SELECT to_char(months.d, 'Mon') label, months.d::text date,
                 COALESCE(col.eggs,0)::int eggs,
                 COALESCE(sal.total,0)::float sales,
@@ -456,12 +504,12 @@ app.get('/api/reports', requireAuth, requireRole('admin'), async (req, res) => {
         `SELECT COALESCE(sum(pequeno),0)::int pequeno, COALESCE(sum(mediano),0)::int mediano,
                 COALESCE(sum(grande),0)::int grande, COALESCE(sum(extra_grande),0)::int extra_grande,
                 COALESCE(sum(jumbo),0)::int jumbo
-         FROM daily_collections WHERE collection_date > ${since}`
+         FROM daily_collections WHERE collection_date > ${since} AND voided_at IS NULL`
       ),
       query(
         `SELECT si.category, sum(si.line_total)::float total, sum(si.quantity * si.eggs_per_unit)::int eggs
          FROM sale_items si JOIN sales s ON s.id = si.sale_id
-         WHERE s.sale_date > ${since}
+         WHERE s.sale_date > ${since} AND s.voided_at IS NULL
          GROUP BY si.category`
       ),
       queryOne('SELECT COALESCE(sum(bird_count),0)::int birds FROM galpones WHERE active')
@@ -574,14 +622,17 @@ app.get('/api/registros', requireAuth, async (req, res) => {
          FROM daily_collections dc
          LEFT JOIN users u ON u.id = dc.created_by
          LEFT JOIN galpones g ON g.id = dc.galpon_id
+         WHERE dc.voided_at IS NULL
          UNION ALL
          SELECT 'sale', s.created_at, u.name, NULL, NULL::int, s.total
          FROM sales s LEFT JOIN users u ON u.id = s.created_by
+         WHERE s.voided_at IS NULL
          UNION ALL
          SELECT 'expense', e.created_at, u.name, g.name, NULL::int, e.amount
          FROM expenses e
          LEFT JOIN users u ON u.id = e.created_by
          LEFT JOIN galpones g ON g.id = e.galpon_id
+         WHERE e.voided_at IS NULL
        ) feed
        ORDER BY created_at DESC
        LIMIT 30`
@@ -596,7 +647,7 @@ app.get('/api/registros', requireAuth, async (req, res) => {
      FROM daily_collections dc
      LEFT JOIN users u ON u.id = dc.created_by
      LEFT JOIN galpones g ON g.id = dc.galpon_id
-     WHERE dc.created_by = $1
+     WHERE dc.created_by = $1 AND dc.voided_at IS NULL
      ORDER BY dc.created_at DESC
      LIMIT 30`,
     [req.user!.id]
@@ -616,8 +667,92 @@ app.post('/api/collections', requireAuth, async (req, res) => {
 });
 
 app.get('/api/collections', requireAuth, requireRole('admin'), async (req, res) => {
+  if (req.query.all === 'true') {
+    const collections = await query(
+      `SELECT dc.*, u.name AS actor_name, g.name AS galpon_name,
+              (dc.pequeno + dc.mediano + dc.grande + dc.extra_grande + dc.jumbo)::int AS eggs
+       FROM daily_collections dc
+       LEFT JOIN users u ON u.id = dc.created_by
+       LEFT JOIN galpones g ON g.id = dc.galpon_id
+       ORDER BY dc.collection_date DESC, dc.created_at DESC
+       LIMIT 500`
+    );
+    return res.json({ collections });
+  }
   const date = typeof req.query.date === 'string' ? req.query.date : gtToday();
   res.json({ collections: await query('SELECT * FROM daily_collections WHERE collection_date = $1 ORDER BY created_at DESC', [date]) });
+});
+
+app.patch('/api/collections/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const input = collectionSchema.parse(req.body);
+    await client.query('BEGIN');
+    const cur = await client.query<CollectionAmounts & { voided_at: string | null }>(
+      'SELECT pequeno, mediano, grande, extra_grande, jumbo, voided_at FROM daily_collections WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    if (cur.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Recoleccion no encontrada.' });
+    }
+    if (cur.rows[0].voided_at) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'La recoleccion esta anulada.' });
+    }
+    const old = cur.rows[0];
+    const delta = {
+      pequeno: input.pequeno - Number(old.pequeno),
+      mediano: input.mediano - Number(old.mediano),
+      grande: input.grande - Number(old.grande),
+      extra_grande: input.extraGrande - Number(old.extra_grande),
+      jumbo: input.jumbo - Number(old.jumbo)
+    };
+    await applyCollectionToInventory(client, delta, 1);
+    const updated = await client.query(
+      `UPDATE daily_collections
+       SET collection_date = $1, pequeno = $2, mediano = $3, grande = $4, extra_grande = $5, jumbo = $6, rotos = $7, notes = $8, galpon_id = $9
+       WHERE id = $10 RETURNING *`,
+      [input.collectionDate, input.pequeno, input.mediano, input.grande, input.extraGrande, input.jumbo, input.rotos, input.notes, input.galponId ?? null, id]
+    );
+    await client.query('COMMIT');
+    res.json({ collection: updated.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(400).json(parseError(error));
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/collections/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    await client.query('BEGIN');
+    const cur = await client.query<CollectionAmounts & { voided_at: string | null }>(
+      'SELECT pequeno, mediano, grande, extra_grande, jumbo, voided_at FROM daily_collections WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    if (cur.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Recoleccion no encontrada.' });
+    }
+    if (cur.rows[0].voided_at) {
+      await client.query('ROLLBACK');
+      return res.json({ ok: true });
+    }
+    await applyCollectionToInventory(client, cur.rows[0], -1);
+    await client.query('UPDATE daily_collections SET voided_at = now() WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(400).json(parseError(error));
+  } finally {
+    client.release();
+  }
 });
 
 app.post('/api/sales', requireAuth, requireRole('admin'), async (req, res) => {
@@ -632,8 +767,99 @@ app.post('/api/sales', requireAuth, requireRole('admin'), async (req, res) => {
 });
 
 app.get('/api/sales', requireAuth, requireRole('admin'), async (req, res) => {
+  if (req.query.all === 'true') {
+    const sales = await query(
+      `SELECT s.*, u.name AS actor_name,
+              COALESCE(json_agg(json_build_object(
+                'product_type', si.product_type, 'category', si.category, 'quantity', si.quantity,
+                'eggs_per_unit', si.eggs_per_unit, 'unit_price', si.unit_price, 'line_total', si.line_total
+              ) ORDER BY si.id) FILTER (WHERE si.id IS NOT NULL), '[]') AS items,
+              COALESCE(sum(si.quantity * si.eggs_per_unit), 0)::int AS eggs
+       FROM sales s
+       LEFT JOIN users u ON u.id = s.created_by
+       LEFT JOIN sale_items si ON si.sale_id = s.id
+       GROUP BY s.id, u.name
+       ORDER BY s.sale_date DESC, s.created_at DESC
+       LIMIT 500`
+    );
+    return res.json({ sales });
+  }
   const date = typeof req.query.date === 'string' ? req.query.date : gtToday();
   res.json({ sales: await query('SELECT * FROM sales WHERE sale_date = $1 ORDER BY created_at DESC', [date]) });
+});
+
+app.patch('/api/sales/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const input = saleSchema.parse(req.body);
+    await client.query('BEGIN');
+    const sale = await client.query<{ voided_at: string | null }>('SELECT voided_at FROM sales WHERE id = $1 FOR UPDATE', [id]);
+    if (sale.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Venta no encontrada.' });
+    }
+    if (sale.rows[0].voided_at) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: 'La venta esta anulada.' });
+    }
+    const oldItems = await client.query<{ category: string; quantity: number; eggs_per_unit: number }>(
+      'SELECT category, quantity, eggs_per_unit FROM sale_items WHERE sale_id = $1',
+      [id]
+    );
+    await restoreSaleItemsToInventory(client, oldItems.rows);
+    await deductSaleItemsFromInventory(client, input.items);
+    await client.query('DELETE FROM sale_items WHERE sale_id = $1', [id]);
+    const total = input.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+    for (const item of input.items) {
+      await client.query(
+        `INSERT INTO sale_items (sale_id, product_type, category, quantity, eggs_per_unit, unit_price, line_total)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [id, item.productType, item.category, item.quantity, eggsPerUnit(item.productType), item.unitPrice, item.quantity * item.unitPrice]
+      );
+    }
+    const updated = await client.query(
+      'UPDATE sales SET sale_date = $1, customer = $2, notes = $3, total = $4 WHERE id = $5 RETURNING *',
+      [input.saleDate, input.customer, input.notes, total, id]
+    );
+    await client.query('COMMIT');
+    res.json({ sale: updated.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(400).json(parseError(error));
+  } finally {
+    client.release();
+  }
+});
+
+app.delete('/api/sales/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    await client.query('BEGIN');
+    const sale = await client.query<{ voided_at: string | null }>('SELECT voided_at FROM sales WHERE id = $1 FOR UPDATE', [id]);
+    if (sale.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Venta no encontrada.' });
+    }
+    if (sale.rows[0].voided_at) {
+      await client.query('ROLLBACK');
+      return res.json({ ok: true });
+    }
+    const items = await client.query<{ category: string; quantity: number; eggs_per_unit: number }>(
+      'SELECT category, quantity, eggs_per_unit FROM sale_items WHERE sale_id = $1',
+      [id]
+    );
+    await restoreSaleItemsToInventory(client, items.rows);
+    await client.query('UPDATE sales SET voided_at = now() WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(400).json(parseError(error));
+  } finally {
+    client.release();
+  }
 });
 
 app.post('/api/expenses', requireAuth, requireRole('admin'), async (req, res) => {
@@ -648,8 +874,46 @@ app.post('/api/expenses', requireAuth, requireRole('admin'), async (req, res) =>
 });
 
 app.get('/api/expenses', requireAuth, requireRole('admin'), async (req, res) => {
+  if (req.query.all === 'true') {
+    const expenses = await query(
+      `SELECT e.*, u.name AS actor_name, g.name AS galpon_name
+       FROM expenses e
+       LEFT JOIN users u ON u.id = e.created_by
+       LEFT JOIN galpones g ON g.id = e.galpon_id
+       ORDER BY e.expense_date DESC, e.created_at DESC
+       LIMIT 500`
+    );
+    return res.json({ expenses });
+  }
   const date = typeof req.query.date === 'string' ? req.query.date : gtToday();
   res.json({ expenses: await query('SELECT * FROM expenses WHERE expense_date = $1 ORDER BY created_at DESC', [date]) });
+});
+
+app.patch('/api/expenses/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const input = expenseSchema.parse(req.body);
+    const expense = await queryOne(
+      `UPDATE expenses
+       SET expense_date = $1, category = $2, supplier = $3, amount = $4, notes = $5, galpon_id = $6
+       WHERE id = $7 AND voided_at IS NULL RETURNING *`,
+      [input.expenseDate, input.category, input.supplier, input.amount, input.notes, input.galponId ?? null, id]
+    );
+    if (!expense) return res.status(404).json({ message: 'Gasto no encontrado o anulado.' });
+    res.json({ expense });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
+});
+
+app.delete('/api/expenses/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    await queryOne('UPDATE expenses SET voided_at = now() WHERE id = $1 AND voided_at IS NULL RETURNING id', [id]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
 });
 
 const userCreateSchema = z.object({

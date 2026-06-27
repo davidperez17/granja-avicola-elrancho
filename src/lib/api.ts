@@ -2,13 +2,16 @@ import type {
   AdminUser,
   AppNotification,
   CollectionPayload,
+  CollectionRecord,
   CreateUserPayload,
   ExpensePayload,
+  ExpenseRecord,
   Galpon,
   RegistroItem,
   ReportData,
   Role,
   SalePayload,
+  SaleRecord,
   User
 } from '../types';
 
@@ -117,6 +120,44 @@ export function updateGalpon(id: string, changes: { name?: string; birdCount?: n
 
 export function getRegistros() {
   return api<{ registros: RegistroItem[] }>('/api/registros');
+}
+
+// Historial completo (admin)
+export function getCollectionsAll() {
+  return api<{ collections: CollectionRecord[] }>('/api/collections?all=true');
+}
+
+export function getSalesAll() {
+  return api<{ sales: SaleRecord[] }>('/api/sales?all=true');
+}
+
+export function getExpensesAll() {
+  return api<{ expenses: ExpenseRecord[] }>('/api/expenses?all=true');
+}
+
+// Editar / anular (admin)
+export function updateCollection(id: string, payload: CollectionPayload) {
+  return api(`/api/collections/${id}`, { method: 'PATCH', json: payload });
+}
+
+export function voidCollection(id: string) {
+  return api(`/api/collections/${id}`, { method: 'DELETE' });
+}
+
+export function updateSale(id: string, payload: SalePayload) {
+  return api(`/api/sales/${id}`, { method: 'PATCH', json: payload });
+}
+
+export function voidSale(id: string) {
+  return api(`/api/sales/${id}`, { method: 'DELETE' });
+}
+
+export function updateExpense(id: string, payload: ExpensePayload) {
+  return api(`/api/expenses/${id}`, { method: 'PATCH', json: payload });
+}
+
+export function voidExpense(id: string) {
+  return api(`/api/expenses/${id}`, { method: 'DELETE' });
 }
 
 export function getNotifications() {
