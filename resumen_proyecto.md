@@ -52,7 +52,8 @@ public/push-sw.js    # handlers push/notificationclick (cargado por el SW)
 
 `users`, `password_reset_tokens`, `inventory` (por categoría), `daily_collections`, `sales`,
 `sale_items`, `expenses`, `settings`, `notifications`, `notification_reads`, `galpones`,
-`push_subscriptions`. Columna `galpon_id` en `daily_collections` y `expenses`.
+`push_subscriptions`. Columna `galpon_id` en `daily_collections` y `expenses`. Columna `voided_at`
+(soft delete) en `daily_collections`, `sales` y `expenses`.
 
 Categorías de huevo: `pequeno, mediano, grande, extra_grande, jumbo`. Roles: `admin, trabajador`.
 Venta: `cajon` = 360 huevos, `oferta_grande` = 90.
@@ -62,7 +63,8 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90.
 - **Auth**: `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/forgot-password`,
   `POST /auth/reset-password`.
 - **Operación**: `POST /collections` (cualquier rol), `POST /sales` `POST /expenses` (admin),
-  `POST /sync` (cola offline), `GET /collections|sales|expenses` (admin).
+  `POST /sync` (cola offline), `GET /collections|sales|expenses` (admin; `?all=true` = historial completo),
+  `PATCH /collections|sales|expenses/:id` (editar), `DELETE /collections|sales|expenses/:id` (anular).
 - **Dashboard/datos**: `GET /dashboard/today` (incluye `profitYesterday`, `birds`),
   `GET /inventory`, `PATCH /inventory/:category` (ajuste admin), `GET /reports?period=7|30|365`.
 - **Registros**: `GET /registros` (admin: todos con autor+galpón; trabajador: los suyos).
@@ -101,6 +103,12 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90.
     **Modal en Ajustes** con estado; activar/desactivar cierra el sheet para no taparlo con el toast.
 11. **Offline**: cola IndexedDB + `POST /sync` (operaciones en orden cronológico); banner de
     sincronización.
+12. **Registros** (admin, en Ajustes): historial completo de **Recolección · Ventas · Gastos**
+    (pestañas), con **editar** y **anular** cada registro. Editor en bottom-sheet. Anular = soft
+    delete (`voided_at`): el registro queda para auditoría pero no cuenta en totales/reportes/inventario.
+    Editar/anular **ajusta el inventario por la diferencia** de forma transaccional (devuelve/descuenta
+    huevos; el `CHECK quantity>=0` impide estados imposibles). Endpoints: `GET /collections|sales|expenses?all=true`,
+    `PATCH` y `DELETE` (anula) de cada uno.
 
 ## Variables de entorno (Vercel → Production)
 
@@ -125,6 +133,8 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90.
   Así un registro nocturno (UTC−6) cae en el día correcto en "Hoy"/Reportes. Es a prueba de pooler
   (no depende del timezone de sesión).
 - **No hay DELETE** de usuarios ni galpones (solo desactivar) para conservar historial/referencias.
+  Recolección/ventas/gastos tampoco se borran físicamente: se **anulan** (`voided_at`), conservando
+  la fila para auditoría. Toda agregación filtra `voided_at IS NULL`.
 - La **DB ya tiene datos reales** del cliente (no borrar). En pruebas locales, siempre limpiar lo
   que se cree.
 - **Service Worker auto-update**: `vite.config.ts` con `registerType: 'autoUpdate'` +
