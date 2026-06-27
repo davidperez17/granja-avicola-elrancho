@@ -6,6 +6,7 @@ import type {
   ExpensePayload,
   Galpon,
   RegistroItem,
+  ReportData,
   Role,
   SalePayload,
   User
@@ -73,6 +74,10 @@ export function postSale(payload: SalePayload) {
 
 export function postExpense(payload: ExpensePayload) {
   return api('/api/expenses', { method: 'POST', json: payload });
+}
+
+export function getReports(period: 7 | 30 | 365) {
+  return api<ReportData>(`/api/reports?period=${period}`);
 }
 
 export function getInventory() {

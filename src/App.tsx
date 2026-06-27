@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -43,6 +43,7 @@ import {
   getMe,
   getNotifications,
   getRegistros,
+  getReports,
   getUsers,
   login,
   logout,
@@ -1230,21 +1231,83 @@ function InventarioScreen() {
 
 /* ---------------------------------------------------------------- reportes */
 
+const ReportChart = lazy(() => import('./components/ReportChart'));
+
+const reportPeriods: Array<{ value: 7 | 30 | 365; label: string }> = [
+  { value: 7, label: '7 dias' },
+  { value: 30, label: '30 dias' },
+  { value: 365, label: 'Ano' }
+];
+
 function ReportesScreen() {
-  const [data, setData] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null);
+  const [period, setPeriod] = useState<7 | 30 | 365>(7);
+  const [data, setData] = useState<Awaited<ReturnType<typeof getReports>> | null>(null);
+  const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
+  const reducedMotion = useMemo(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches, []);
 
   useEffect(() => {
-    getDashboard()
-      .then(setData)
-      .catch((error) => setMessage(error instanceof Error ? error.message : 'No se pudo cargar reportes.'));
-  }, []);
+    let active = true;
+    setLoading(true);
+    getReports(period)
+      .then((result) => {
+        if (active) {
+          setData(result);
+          setMessage('');
+        }
+      })
+      .catch((error) => active && setMessage(error instanceof Error ? error.message : 'No se pudo cargar el reporte.'))
+      .finally(() => active && setLoading(false));
+    return () => {
+      active = false;
+    };
+  }, [period]);
 
-  const production = data ? collectionProduction(data.collection) : 0;
+  const series = data?.series ?? [];
+  const hasData = series.some((point) => point.eggs > 0 || point.sales > 0 || point.expenses > 0);
+  const totals = series.reduce(
+    (acc, point) => ({
+      eggs: acc.eggs + point.eggs,
+      sales: acc.sales + point.sales,
+      expenses: acc.expenses + point.expenses,
+      profit: acc.profit + point.profit
+    }),
+    { eggs: 0, sales: 0, expenses: 0, profit: 0 }
+  );
+  const avgEggs = series.length ? Math.round(totals.eggs / series.length) : 0;
+  const bestDay = series.reduce<typeof series[number] | null>((best, point) => (!best || point.eggs > best.eggs ? point : best), null);
+  const laying = data && data.birds > 0 ? Math.round((avgEggs / data.birds) * 100) : null;
+
+  function exportCsv() {
+    const header = ['Fecha', 'Huevos', 'Ventas', 'Gastos', 'Ganancia'];
+    const rows = series.map((point) => [point.date, point.eggs, point.sales, point.expenses, point.profit].join(','));
+    const csv = [header.join(','), ...rows].join('\n');
+    const blob = new Blob([`﻿${csv}`], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `reporte-elrancho-${period === 365 ? 'ano' : `${period}dias`}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <section className="screen screen-pad">
-      <ScreenHeader title="Reportes" sub="Cifras del dia de hoy" />
+      <ScreenHeader title="Reportes" sub="Produccion, ventas y ganancia" />
+
+      <div className="chip-row" role="tablist" aria-label="Periodo">
+        {reportPeriods.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className="chip"
+            aria-pressed={period === option.value}
+            onClick={() => setPeriod(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
 
       {message && (
         <p className="status-message status-message-danger" role="alert">
@@ -1252,40 +1315,97 @@ function ReportesScreen() {
         </p>
       )}
 
-      <div className="empty-card">
-        <span className="empty-card-icon" aria-hidden="true">
-          <LineChart size={28} strokeWidth={1.7} />
-        </span>
-        <p className="empty-card-title">Tendencias por periodo</p>
-        <p className="empty-card-text">Apareceran cuando haya varios dias de historial acumulado.</p>
+      <div className="chart-card">
+        {loading ? (
+          <div className="chart-loading">
+            <Skeleton className="skeleton-chart" />
+          </div>
+        ) : hasData ? (
+          <Suspense fallback={<div className="chart-loading"><Skeleton className="skeleton-chart" /></div>}>
+            <ReportChart series={series} reducedMotion={reducedMotion} />
+          </Suspense>
+        ) : (
+          <div className="chart-empty-state">
+            <LineChart size={28} strokeWidth={1.7} />
+            <p>Sin datos en este periodo.</p>
+          </div>
+        )}
       </div>
 
       <div className="stack">
         <div className="kv-row">
-          <span className="kv-label">Produccion de hoy</span>
-          <span className="kv-value number-text">{data ? formatNumber(production) : '—'}</span>
+          <span className="kv-label">Produccion total</span>
+          <span className="kv-value number-text">{formatNumber(totals.eggs)} huevos</span>
         </div>
         <div className="kv-row">
-          <span className="kv-label">Postura (huevos / aves)</span>
-          <span className="kv-value number-text">
-            {data ? (data.birds > 0 ? `${Math.round((production / data.birds) * 100)}%` : 'Sin aves') : '—'}
-          </span>
+          <span className="kv-label">Promedio / dia</span>
+          <span className="kv-value number-text">{formatNumber(avgEggs)} huevos</span>
         </div>
         <div className="kv-row">
-          <span className="kv-label">Ventas de hoy</span>
-          <span className="kv-value number-text">{data ? formatMoney(data.sales.total) : '—'}</span>
+          <span className="kv-label">Postura promedio</span>
+          <span className="kv-value number-text">{laying !== null ? `${laying}%` : 'Sin aves'}</span>
         </div>
         <div className="kv-row">
-          <span className="kv-label">Gastos de hoy</span>
-          <span className="kv-value number-text">{data ? formatMoney(data.expenses.total) : '—'}</span>
+          <span className="kv-label">Mejor dia</span>
+          <span className="kv-value number-text">{bestDay && bestDay.eggs > 0 ? `${bestDay.label} · ${formatNumber(bestDay.eggs)}` : '—'}</span>
         </div>
         <div className="kv-row">
-          <span className="kv-label">Ganancia de hoy</span>
-          <span className={`kv-value number-text ${data && data.profit < 0 ? 'kv-negative' : 'kv-positive'}`}>
-            {data ? formatMoney(data.profit) : '—'}
-          </span>
+          <span className="kv-label">Ventas del periodo</span>
+          <span className="kv-value number-text">{formatMoney(totals.sales)}</span>
+        </div>
+        <div className="kv-row">
+          <span className="kv-label">Gastos del periodo</span>
+          <span className="kv-value number-text">{formatMoney(totals.expenses)}</span>
+        </div>
+        <div className="kv-row">
+          <span className="kv-label">Ganancia del periodo</span>
+          <span className={`kv-value number-text ${totals.profit < 0 ? 'kv-negative' : 'kv-positive'}`}>{formatMoney(totals.profit)}</span>
         </div>
       </div>
+
+      <div className="section-head">
+        <h2 className="section-title">Produccion por tamano</h2>
+      </div>
+      <div className="stack">
+        {eggColumns.map((col) => {
+          const value = data ? data.byCategoryProduction[col.key] : 0;
+          const max = data ? Math.max(1, ...eggColumns.map((c) => data.byCategoryProduction[c.key])) : 1;
+          return (
+            <div key={col.key} className="inv-card">
+              <div className="inv-card-top">
+                <span className="list-main">
+                  <span className="list-title">{categoryLabels[col.key]}</span>
+                </span>
+                <span className="list-value number-text">{formatNumber(value)}</span>
+              </div>
+              <div className="inv-bar" aria-hidden="true">
+                <span style={{ width: `${Math.round((value / max) * 100)}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {data && data.byCategorySales.length > 0 && (
+        <>
+          <div className="section-head">
+            <h2 className="section-title">Ventas por categoria</h2>
+          </div>
+          <div className="stack">
+            {data.byCategorySales.map((item) => (
+              <div key={item.category} className="kv-row">
+                <span className="kv-label">{categoryLabels[item.category as CategoryKey] ?? item.category}</span>
+                <span className="kv-value number-text">{formatMoney(item.total)}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      <button type="button" className="btn btn-secondary btn-block" onClick={exportCsv} disabled={!hasData}>
+        <Download size={18} />
+        Exportar CSV
+      </button>
     </section>
   );
 }

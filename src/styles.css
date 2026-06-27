@@ -1456,6 +1456,43 @@ a:focus-visible {
   color: var(--danger);
 }
 
+.chart-card {
+  height: 16rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0.75rem 0.5rem 0.5rem;
+}
+
+.chart-loading {
+  height: 100%;
+  display: grid;
+  place-items: stretch;
+  padding: 0.5rem;
+}
+
+.skeleton-chart {
+  width: 100%;
+  height: 100%;
+  border-radius: var(--radius);
+}
+
+.chart-empty-state {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: #5e8a3f;
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+
+.chart-empty-state p {
+  margin: 0;
+}
+
 /* ----------------------------------------------------------------- ajustes */
 
 .profile-card {

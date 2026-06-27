@@ -70,6 +70,24 @@ export type ExpensePayload = {
   notes?: string;
 };
 
+export type ReportSeriesPoint = {
+  label: string;
+  date: string;
+  eggs: number;
+  sales: number;
+  expenses: number;
+  profit: number;
+};
+
+export type ReportData = {
+  period: number;
+  granularity: 'day' | 'month';
+  series: ReportSeriesPoint[];
+  byCategoryProduction: Record<'pequeno' | 'mediano' | 'grande' | 'extra_grande' | 'jumbo', number>;
+  byCategorySales: Array<{ category: string; total: number; eggs: number }>;
+  birds: number;
+};
+
 export type NotificationType = 'collection' | 'sale' | 'expense' | 'low_inventory';
 
 export type AppNotification = {

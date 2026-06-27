@@ -396,6 +396,77 @@ app.get('/api/dashboard/today', requireAuth, requireRole('admin'), async (_req, 
   res.json({ collection, sales, expenses, inventory, profit, profitYesterday, birds: Number(birds?.birds || 0) });
 });
 
+app.get('/api/reports', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const period = z.coerce.number().int().refine((value) => [7, 30, 365].includes(value), 'Periodo invalido.').parse(req.query.period ?? 7);
+    const granularity = period === 365 ? 'month' : 'day';
+    const eggsExpr = 'pequeno + mediano + grande + extra_grande + jumbo';
+
+    let series;
+    if (granularity === 'day') {
+      series = await query(
+        `WITH days AS (
+           SELECT generate_series(CURRENT_DATE - ($1::int - 1), CURRENT_DATE, INTERVAL '1 day')::date AS d
+         ),
+         col AS (SELECT collection_date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date > CURRENT_DATE - $1::int GROUP BY collection_date),
+         sal AS (SELECT sale_date d, sum(total)::float total FROM sales WHERE sale_date > CURRENT_DATE - $1::int GROUP BY sale_date),
+         exp AS (SELECT expense_date d, sum(amount)::float total FROM expenses WHERE expense_date > CURRENT_DATE - $1::int GROUP BY expense_date)
+         SELECT to_char(days.d, 'DD/MM') label, days.d::text date,
+                COALESCE(col.eggs,0)::int eggs,
+                COALESCE(sal.total,0)::float sales,
+                COALESCE(exp.total,0)::float expenses,
+                (COALESCE(sal.total,0) - COALESCE(exp.total,0))::float profit
+         FROM days
+         LEFT JOIN col ON col.d = days.d
+         LEFT JOIN sal ON sal.d = days.d
+         LEFT JOIN exp ON exp.d = days.d
+         ORDER BY days.d`,
+        [period]
+      );
+    } else {
+      series = await query(
+        `WITH months AS (
+           SELECT generate_series(date_trunc('month', CURRENT_DATE) - INTERVAL '11 months', date_trunc('month', CURRENT_DATE), INTERVAL '1 month')::date AS d
+         ),
+         col AS (SELECT date_trunc('month', collection_date)::date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '11 months' GROUP BY 1),
+         sal AS (SELECT date_trunc('month', sale_date)::date d, sum(total)::float total FROM sales WHERE sale_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '11 months' GROUP BY 1),
+         exp AS (SELECT date_trunc('month', expense_date)::date d, sum(amount)::float total FROM expenses WHERE expense_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '11 months' GROUP BY 1)
+         SELECT to_char(months.d, 'Mon') label, months.d::text date,
+                COALESCE(col.eggs,0)::int eggs,
+                COALESCE(sal.total,0)::float sales,
+                COALESCE(exp.total,0)::float expenses,
+                (COALESCE(sal.total,0) - COALESCE(exp.total,0))::float profit
+         FROM months
+         LEFT JOIN col ON col.d = months.d
+         LEFT JOIN sal ON sal.d = months.d
+         LEFT JOIN exp ON exp.d = months.d
+         ORDER BY months.d`
+      );
+    }
+
+    const since = `CURRENT_DATE - ${period}::int`;
+    const [byCategoryProduction, byCategorySales, birds] = await Promise.all([
+      queryOne(
+        `SELECT COALESCE(sum(pequeno),0)::int pequeno, COALESCE(sum(mediano),0)::int mediano,
+                COALESCE(sum(grande),0)::int grande, COALESCE(sum(extra_grande),0)::int extra_grande,
+                COALESCE(sum(jumbo),0)::int jumbo
+         FROM daily_collections WHERE collection_date > ${since}`
+      ),
+      query(
+        `SELECT si.category, sum(si.line_total)::float total, sum(si.quantity * si.eggs_per_unit)::int eggs
+         FROM sale_items si JOIN sales s ON s.id = si.sale_id
+         WHERE s.sale_date > ${since}
+         GROUP BY si.category`
+      ),
+      queryOne('SELECT COALESCE(sum(bird_count),0)::int birds FROM galpones WHERE active')
+    ]);
+
+    res.json({ period, granularity, series, byCategoryProduction, byCategorySales, birds: Number(birds?.birds || 0) });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
+});
+
 app.get('/api/inventory', requireAuth, requireRole('admin'), async (_req, res) => {
   res.json({ inventory: await query('SELECT category, quantity, updated_at FROM inventory ORDER BY category') });
 });
