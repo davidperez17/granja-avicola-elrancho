@@ -2524,7 +2524,10 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
           canInstall={Boolean(deferredPrompt)}
           onEnable={enableNotifications}
           onInstall={installApp}
-          onOpenSettings={() => setNotifSettingsOpen(true)}
+          onOpenSettings={() => {
+            setNotifSettingsOpen(true);
+            dismissBanner();
+          }}
           onDismiss={dismissBanner}
         />
       )}
