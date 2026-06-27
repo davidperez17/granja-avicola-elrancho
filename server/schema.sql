@@ -137,3 +137,12 @@ CREATE TABLE IF NOT EXISTS galpones (
 
 ALTER TABLE daily_collections ADD COLUMN IF NOT EXISTS galpon_id uuid REFERENCES galpones(id);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS galpon_id uuid REFERENCES galpones(id);
+
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  endpoint text UNIQUE NOT NULL,
+  p256dh text NOT NULL,
+  auth text NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);

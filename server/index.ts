@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
 import express from 'express';
+import webpush from 'web-push';
 import { z } from 'zod';
 import { pool, query, queryOne } from './db.js';
 import { requireAuth, requireRole, setSessionCookie, signSession, type AuthUser } from './auth.js';
@@ -12,6 +13,13 @@ import { requireAuth, requireRole, setSessionCookie, signSession, type AuthUser 
 const app = express();
 const port = Number(process.env.PORT || 8787);
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const vapidPublic = process.env.VAPID_PUBLIC_KEY || '';
+const vapidPrivate = process.env.VAPID_PRIVATE_KEY || '';
+const pushEnabled = Boolean(vapidPublic && vapidPrivate);
+if (pushEnabled) {
+  webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@elrancho.app', vapidPublic, vapidPrivate);
+}
 
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
@@ -80,6 +88,34 @@ type NotificationInput = {
   source?: 'direct' | 'sync';
 };
 
+// Envia push a los admin activos suscritos. Best-effort; limpia suscripciones expiradas.
+async function sendPushToAdmins(title: string, body: string) {
+  if (!pushEnabled) return;
+  try {
+    const subs = await query<{ endpoint: string; p256dh: string; auth: string }>(
+      `SELECT ps.endpoint, ps.p256dh, ps.auth
+       FROM push_subscriptions ps
+       JOIN users u ON u.id = ps.user_id
+       WHERE u.role = 'admin' AND u.active`
+    );
+    const payload = JSON.stringify({ title, body });
+    await Promise.all(
+      subs.map(async (sub) => {
+        try {
+          await webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.p256dh, auth: sub.auth } }, payload);
+        } catch (error) {
+          const status = (error as { statusCode?: number }).statusCode;
+          if (status === 404 || status === 410) {
+            await query('DELETE FROM push_subscriptions WHERE endpoint = $1', [sub.endpoint]);
+          }
+        }
+      })
+    );
+  } catch (error) {
+    console.error('No se pudo enviar push:', error);
+  }
+}
+
 // Best-effort: una notificacion nunca debe romper el registro principal.
 async function addNotification(input: NotificationInput) {
   try {
@@ -88,6 +124,7 @@ async function addNotification(input: NotificationInput) {
        VALUES ($1, $2, $3, $4, $5)`,
       [input.type, input.title, input.body ?? null, input.actorName ?? null, input.source ?? 'direct']
     );
+    await sendPushToAdmins(input.title, input.body ?? '');
   } catch (error) {
     console.error('No se pudo registrar notificacion:', error);
   }
@@ -632,6 +669,40 @@ app.post('/api/notifications/read', requireAuth, requireRole('admin'), async (re
     [req.user!.id]
   );
   res.json({ ok: true });
+});
+
+app.get('/api/push/public-key', requireAuth, (_req, res) => {
+  res.json({ publicKey: pushEnabled ? vapidPublic : '' });
+});
+
+const pushSubSchema = z.object({
+  endpoint: z.string().url(),
+  keys: z.object({ p256dh: z.string().min(1), auth: z.string().min(1) })
+});
+
+app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+  try {
+    const sub = pushSubSchema.parse(req.body);
+    await query(
+      `INSERT INTO push_subscriptions (user_id, endpoint, p256dh, auth)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (endpoint) DO UPDATE SET user_id = EXCLUDED.user_id, p256dh = EXCLUDED.p256dh, auth = EXCLUDED.auth`,
+      [req.user!.id, sub.endpoint, sub.keys.p256dh, sub.keys.auth]
+    );
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
+});
+
+app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
+  try {
+    const { endpoint } = z.object({ endpoint: z.string().url() }).parse(req.body);
+    await query('DELETE FROM push_subscriptions WHERE endpoint = $1 AND user_id = $2', [endpoint, req.user!.id]);
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
 });
 
 app.post('/api/sync', requireAuth, async (req, res) => {

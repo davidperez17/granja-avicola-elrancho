@@ -9,6 +9,7 @@ import {
   CircleDollarSign,
   ClipboardList,
   Cloud,
+  Download,
   Egg,
   History,
   Eye,
@@ -54,6 +55,7 @@ import {
   updateUser
 } from './lib/api';
 import { enqueueOperation, getQueuedOperations, syncQueuedOperations } from './lib/offline';
+import { getPushStatus, subscribeToPush, unsubscribeFromPush, type PushStatus } from './lib/push';
 import type {
   AdminUser,
   AppNotification,
@@ -1392,6 +1394,7 @@ function AjustesScreen({
   onSync,
   onOpenUsers,
   onOpenGalpones,
+  onOpenNotifSettings,
   onLogout
 }: {
   user: User;
@@ -1400,6 +1403,7 @@ function AjustesScreen({
   onSync: () => void;
   onOpenUsers: () => void;
   onOpenGalpones: () => void;
+  onOpenNotifSettings: () => void;
   onLogout: () => void;
 }) {
   const isAdmin = user.role === 'admin';
@@ -1430,6 +1434,13 @@ function AjustesScreen({
 
         {isAdmin && (
           <>
+            <button type="button" className="settings-row" onClick={onOpenNotifSettings}>
+              <span className="settings-icon" aria-hidden="true">
+                <Bell size={18} />
+              </span>
+              <span className="settings-label">Notificaciones</span>
+              <ChevronRight size={18} className="settings-chevron" />
+            </button>
             <button type="button" className="settings-row" onClick={onOpenGalpones}>
               <span className="settings-icon" aria-hidden="true">
                 <Warehouse size={18} />
@@ -1958,6 +1969,155 @@ function NotificationsSheet({
   );
 }
 
+function PushBanner({
+  status,
+  canInstall,
+  onEnable,
+  onInstall,
+  onOpenSettings,
+  onDismiss
+}: {
+  status: PushStatus;
+  canInstall: boolean;
+  onEnable: () => void;
+  onInstall: () => void;
+  onOpenSettings: () => void;
+  onDismiss: () => void;
+}) {
+  const needNotif = status.supported && status.permission !== 'granted';
+  const needInstall = !status.installed;
+  if (!needNotif && !needInstall) return null;
+
+  const message = needNotif
+    ? 'Activa las notificaciones para enterarte al instante.'
+    : 'Instala la app para recibir avisos en tu movil.';
+
+  let action: React.ReactNode;
+  if (needNotif && status.supported) {
+    action = (
+      <button type="button" className="btn btn-primary btn-sm" onClick={onEnable}>
+        Activar
+      </button>
+    );
+  } else if (needInstall && canInstall) {
+    action = (
+      <button type="button" className="btn btn-primary btn-sm" onClick={onInstall}>
+        Instalar
+      </button>
+    );
+  } else {
+    action = (
+      <button type="button" className="btn btn-secondary btn-sm" onClick={onOpenSettings}>
+        Ver
+      </button>
+    );
+  }
+
+  return (
+    <div className="push-banner" role="status">
+      <span className="push-banner-text">
+        <Bell size={18} />
+        {message}
+      </span>
+      <span className="push-banner-actions">
+        {action}
+        <button type="button" className="push-banner-close" aria-label="Descartar" onClick={onDismiss}>
+          <X size={18} />
+        </button>
+      </span>
+    </div>
+  );
+}
+
+function NotifSettingsSheet({
+  open,
+  status,
+  canInstall,
+  onClose,
+  onEnable,
+  onDisable,
+  onInstall
+}: {
+  open: boolean;
+  status: PushStatus;
+  canInstall: boolean;
+  onClose: () => void;
+  onEnable: () => void;
+  onDisable: () => void;
+  onInstall: () => void;
+}) {
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+  const active = status.supported && status.permission === 'granted' && status.subscribed;
+
+  return (
+    <div className="notif-scrim" role="dialog" aria-modal="true" aria-label="Notificaciones" onClick={onClose}>
+      <div className="notif-sheet" onClick={(event) => event.stopPropagation()}>
+        <div className="notif-head">
+          <h2 className="notif-title">Notificaciones</h2>
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        <div className="ns-body">
+          <div className="ns-row">
+            <span className="ns-label">Estado en este dispositivo</span>
+            <span className={`pill ${active ? 'pill-online' : 'pill-neutral'}`}>
+              {!status.supported ? 'No soportado' : active ? 'Activadas' : 'Desactivadas'}
+            </span>
+          </div>
+
+          {!status.supported && (
+            <p className="ns-hint">
+              Este navegador no soporta notificaciones push. En iPhone, instala la app en la pantalla de inicio y abrela
+              desde ahi.
+            </p>
+          )}
+
+          {status.supported &&
+            (active ? (
+              <button type="button" className="btn btn-secondary btn-block" onClick={onDisable}>
+                Desactivar notificaciones
+              </button>
+            ) : (
+              <button type="button" className="btn btn-primary btn-block" onClick={onEnable}>
+                <Bell size={18} />
+                Activar notificaciones
+              </button>
+            ))}
+
+          {!status.installed && (
+            <div className="ns-install">
+              <p className="ns-label">Instalar app</p>
+              {canInstall ? (
+                <button type="button" className="btn btn-secondary btn-block" onClick={onInstall}>
+                  <Download size={18} />
+                  Instalar en este dispositivo
+                </button>
+              ) : (
+                <p className="ns-hint">
+                  {status.ios
+                    ? 'En iPhone: toca el boton Compartir y luego "Agregar a inicio".'
+                    : 'Abre el menu del navegador y elige "Instalar app" para tenerla como aplicacion.'}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SyncBanner({ online, pending, onSync }: { online: boolean; pending: number; onSync: () => void }) {
   if (online && pending === 0) return null;
   return (
@@ -1995,6 +2155,11 @@ const NAV: Array<{ key: ViewKey; label: string; icon: React.ReactNode; adminOnly
   { key: 'ajustes', label: 'Ajustes', icon: <Settings size={22} /> }
 ];
 
+type InstallPromptEvent = Event & {
+  prompt: () => Promise<void>;
+  userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
+};
+
 function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const isAdmin = user.role === 'admin';
   const nav = useMemo(() => NAV.filter((item) => (isAdmin ? !item.workerOnly : !item.adminOnly)), [isAdmin]);
@@ -2019,6 +2184,10 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [unread, setUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
   const [galpones, setGalpones] = useState<Galpon[]>([]);
+  const [pushStatus, setPushStatus] = useState<PushStatus | null>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<InstallPromptEvent | null>(null);
+  const [notifSettingsOpen, setNotifSettingsOpen] = useState(false);
+  const [bannerDismissed, setBannerDismissed] = useState(() => localStorage.getItem('pushBannerDismissed') === '1');
 
   async function refreshPending() {
     setPending((await getQueuedOperations()).length);
@@ -2030,6 +2199,41 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
     } catch {
       /* sin conexion: se reintenta al volver el foco */
     }
+  }
+
+  async function refreshPushStatus() {
+    setPushStatus(await getPushStatus());
+  }
+
+  async function enableNotifications() {
+    const result = await subscribeToPush();
+    await refreshPushStatus();
+    if (result.ok) {
+      setToast({ title: 'Notificaciones activadas', detail: 'Recibiras avisos en este dispositivo.' });
+    } else if (result.reason === 'sin-configurar') {
+      setToast({ title: 'Push no configurado', detail: 'Faltan las claves VAPID en el servidor.' });
+    } else if (result.reason === 'permiso-denegado') {
+      setToast({ title: 'Permiso denegado', detail: 'Activalo en los ajustes del navegador.' });
+    }
+  }
+
+  async function disableNotifications() {
+    await unsubscribeFromPush();
+    await refreshPushStatus();
+    setToast({ title: 'Notificaciones desactivadas' });
+  }
+
+  async function installApp() {
+    if (!deferredPrompt) return;
+    await deferredPrompt.prompt();
+    await deferredPrompt.userChoice.catch(() => undefined);
+    setDeferredPrompt(null);
+    setTimeout(refreshPushStatus, 500);
+  }
+
+  function dismissBanner() {
+    setBannerDismissed(true);
+    localStorage.setItem('pushBannerDismissed', '1');
   }
 
   async function loadNotifications() {
@@ -2096,6 +2300,25 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
     };
   }, [isAdmin]);
 
+  useEffect(() => {
+    if (!isAdmin) return;
+    refreshPushStatus();
+    const onBeforeInstall = (event: Event) => {
+      event.preventDefault();
+      setDeferredPrompt(event as InstallPromptEvent);
+    };
+    const onInstalled = () => {
+      setDeferredPrompt(null);
+      refreshPushStatus();
+    };
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, [isAdmin]);
+
   function selectView(next: ViewKey) {
     setView(next);
     if (window.location.hash !== `#${next}`) window.location.hash = next;
@@ -2114,6 +2337,16 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
 
       <main id="main" className="shell-main" tabIndex={-1}>
         <SyncBanner online={online} pending={pending} onSync={runSync} />
+        {isAdmin && pushStatus && !bannerDismissed && (
+          <PushBanner
+            status={pushStatus}
+            canInstall={Boolean(deferredPrompt)}
+            onEnable={enableNotifications}
+            onInstall={installApp}
+            onOpenSettings={() => setNotifSettingsOpen(true)}
+            onDismiss={dismissBanner}
+          />
+        )}
         {view === 'hoy' && isAdmin && (
           <HoyScreen user={user} online={online} unread={unread} onOpenNotifications={openNotifications} />
         )}
@@ -2139,6 +2372,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             onSync={runSync}
             onOpenUsers={() => selectView('usuarios')}
             onOpenGalpones={() => selectView('galpones')}
+            onOpenNotifSettings={() => setNotifSettingsOpen(true)}
             onLogout={onLogout}
           />
         )}
@@ -2157,6 +2391,18 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
       {toast && <Toast title={toast.title} detail={toast.detail} onDone={() => setToast(null)} />}
 
       <NotificationsSheet open={notifOpen} notifications={notifications} onClose={() => setNotifOpen(false)} />
+
+      {pushStatus && (
+        <NotifSettingsSheet
+          open={notifSettingsOpen}
+          status={pushStatus}
+          canInstall={Boolean(deferredPrompt)}
+          onClose={() => setNotifSettingsOpen(false)}
+          onEnable={enableNotifications}
+          onDisable={disableNotifications}
+          onInstall={installApp}
+        />
+      )}
 
       <nav className="bottom-nav" aria-label="Navegacion principal">
         {nav.map((item) => (

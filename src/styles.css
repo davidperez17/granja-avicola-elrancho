@@ -1728,6 +1728,92 @@ button.settings-row:hover:not(:disabled) {
 
 /* -------------------------------------------------------------- sync banner */
 
+.push-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.625rem;
+  margin: calc(1rem + env(safe-area-inset-top)) 1.125rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--color-mint-100);
+  padding: 0.75rem 0.875rem;
+}
+
+.push-banner-text {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--brand-deep);
+}
+
+.push-banner-text svg {
+  flex: none;
+  color: var(--brand);
+}
+
+.push-banner-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  flex: none;
+}
+
+.push-banner-close {
+  width: 2.25rem;
+  height: 2.25rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: var(--ink-mute);
+}
+
+.push-banner-close:hover {
+  background: rgba(39, 77, 25, 0.08);
+}
+
+.ns-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+  padding-bottom: 0.5rem;
+}
+
+.ns-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.ns-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.ns-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.ns-install {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 0.875rem;
+}
+
 .sync-banner {
   display: flex;
   flex-wrap: wrap;
