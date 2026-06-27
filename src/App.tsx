@@ -264,19 +264,22 @@ function OnlinePill({ online }: { online: boolean }) {
 function WelcomeScreen({ onStart }: { onStart: () => void }) {
   return (
     <main className="welcome">
-      <div className="welcome-hero">
+      <div className="welcome-hero welcome-hero-photo">
+        <img
+          className="welcome-hero-img"
+          src="/brand/hero.jpg"
+          alt=""
+          aria-hidden="true"
+          onError={(event) => {
+            event.currentTarget.closest('.welcome-hero')?.classList.remove('welcome-hero-photo');
+            event.currentTarget.style.display = 'none';
+          }}
+        />
         <div className="welcome-brand">
           <span className="welcome-logo" aria-hidden="true">
             <Egg size={20} />
           </span>
           <span>El Rancho</span>
-        </div>
-        <div className="welcome-art" aria-hidden="true">
-          <span className="welcome-art-ring welcome-art-ring-1" />
-          <span className="welcome-art-ring welcome-art-ring-2" />
-          <span className="welcome-art-egg">
-            <Egg size={56} strokeWidth={1.5} />
-          </span>
         </div>
       </div>
       <div className="welcome-body">
