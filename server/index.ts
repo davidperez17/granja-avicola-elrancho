@@ -21,6 +21,8 @@ const categorySchema = z.enum(categories);
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const countSchema = z.coerce.number().int().min(0).default(0);
 
+const galponIdSchema = z.string().uuid().optional().nullable();
+
 const collectionSchema = z.object({
   collectionDate: dateSchema,
   pequeno: countSchema,
@@ -29,6 +31,7 @@ const collectionSchema = z.object({
   extraGrande: countSchema,
   jumbo: countSchema,
   rotos: countSchema,
+  galponId: galponIdSchema,
   notes: z.string().max(500).optional().default('')
 });
 
@@ -51,6 +54,7 @@ const expenseSchema = z.object({
   category: z.string().min(1).max(80),
   supplier: z.string().max(160).optional().default(''),
   amount: z.coerce.number().min(0),
+  galponId: galponIdSchema,
   notes: z.string().max(500).optional().default('')
 });
 
@@ -110,10 +114,10 @@ async function addCollection(input: z.infer<typeof collectionSchema>, userId: st
     await client.query('BEGIN');
     const result = await client.query(
       `INSERT INTO daily_collections
-       (collection_date, pequeno, mediano, grande, extra_grande, jumbo, rotos, notes, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (collection_date, pequeno, mediano, grande, extra_grande, jumbo, rotos, notes, created_by, galpon_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [input.collectionDate, input.pequeno, input.mediano, input.grande, input.extraGrande, input.jumbo, input.rotos, input.notes, userId]
+      [input.collectionDate, input.pequeno, input.mediano, input.grande, input.extraGrande, input.jumbo, input.rotos, input.notes, userId, input.galponId ?? null]
     );
 
     const increments = [
@@ -202,10 +206,10 @@ async function addSale(input: z.infer<typeof saleSchema>, userId: string) {
 
 async function addExpense(input: z.infer<typeof expenseSchema>, userId: string) {
   return queryOne(
-    `INSERT INTO expenses (expense_date, category, supplier, amount, notes, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6)
+    `INSERT INTO expenses (expense_date, category, supplier, amount, notes, created_by, galpon_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
      RETURNING *`,
-    [input.expenseDate, input.category, input.supplier, input.amount, input.notes, userId]
+    [input.expenseDate, input.category, input.supplier, input.amount, input.notes, userId, input.galponId ?? null]
   );
 }
 
@@ -334,7 +338,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 });
 
 app.get('/api/dashboard/today', requireAuth, requireRole('admin'), async (_req, res) => {
-  const [collection, sales, expenses, inventory, salesYesterday, expensesYesterday] = await Promise.all([
+  const [collection, sales, expenses, inventory, salesYesterday, expensesYesterday, birds] = await Promise.all([
     queryOne(
       `SELECT COALESCE(sum(pequeno),0)::int pequeno, COALESCE(sum(mediano),0)::int mediano,
               COALESCE(sum(grande),0)::int grande, COALESCE(sum(extra_grande),0)::int extra_grande,
@@ -345,17 +349,123 @@ app.get('/api/dashboard/today', requireAuth, requireRole('admin'), async (_req, 
     queryOne('SELECT COALESCE(sum(amount),0)::float total, count(*)::int count FROM expenses WHERE expense_date = CURRENT_DATE'),
     query('SELECT category, quantity FROM inventory ORDER BY category'),
     queryOne("SELECT COALESCE(sum(total),0)::float total FROM sales WHERE sale_date = CURRENT_DATE - INTERVAL '1 day'"),
-    queryOne("SELECT COALESCE(sum(amount),0)::float total FROM expenses WHERE expense_date = CURRENT_DATE - INTERVAL '1 day'")
+    queryOne("SELECT COALESCE(sum(amount),0)::float total FROM expenses WHERE expense_date = CURRENT_DATE - INTERVAL '1 day'"),
+    queryOne('SELECT COALESCE(sum(bird_count),0)::int birds FROM galpones WHERE active')
   ]);
 
   const profit = Number(sales?.total || 0) - Number(expenses?.total || 0);
   const profitYesterday = Number(salesYesterday?.total || 0) - Number(expensesYesterday?.total || 0);
 
-  res.json({ collection, sales, expenses, inventory, profit, profitYesterday });
+  res.json({ collection, sales, expenses, inventory, profit, profitYesterday, birds: Number(birds?.birds || 0) });
 });
 
 app.get('/api/inventory', requireAuth, requireRole('admin'), async (_req, res) => {
   res.json({ inventory: await query('SELECT category, quantity, updated_at FROM inventory ORDER BY category') });
+});
+
+const galponCreateSchema = z.object({
+  name: z.string().min(1).max(80),
+  birdCount: z.coerce.number().int().min(0).default(0)
+});
+
+const galponUpdateSchema = z
+  .object({
+    name: z.string().min(1).max(80).optional(),
+    birdCount: z.coerce.number().int().min(0).optional(),
+    active: z.boolean().optional()
+  })
+  .refine((value) => value.name !== undefined || value.birdCount !== undefined || value.active !== undefined, {
+    message: 'Nada que actualizar.'
+  });
+
+app.get('/api/galpones', requireAuth, async (req, res) => {
+  const all = req.query.all === 'true' && req.user!.role === 'admin';
+  res.json({
+    galpones: await query(`SELECT id, name, bird_count, active FROM galpones ${all ? '' : 'WHERE active'} ORDER BY name ASC`)
+  });
+});
+
+app.post('/api/galpones', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const input = galponCreateSchema.parse(req.body);
+    const galpon = await queryOne(
+      'INSERT INTO galpones (name, bird_count) VALUES ($1, $2) RETURNING id, name, bird_count, active',
+      [input.name, input.birdCount]
+    );
+    res.json({ galpon });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
+});
+
+app.patch('/api/galpones/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const input = galponUpdateSchema.parse(req.body);
+    const updates: string[] = [];
+    const values: unknown[] = [];
+    if (input.name !== undefined) {
+      values.push(input.name);
+      updates.push(`name = $${values.length}`);
+    }
+    if (input.birdCount !== undefined) {
+      values.push(input.birdCount);
+      updates.push(`bird_count = $${values.length}`);
+    }
+    if (input.active !== undefined) {
+      values.push(input.active);
+      updates.push(`active = $${values.length}`);
+    }
+    values.push(id);
+    const galpon = await queryOne(
+      `UPDATE galpones SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING id, name, bird_count, active`,
+      values
+    );
+    if (!galpon) return res.status(404).json({ message: 'Galpon no encontrado.' });
+    res.json({ galpon });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
+});
+
+app.get('/api/registros', requireAuth, async (req, res) => {
+  if (req.user!.role === 'admin') {
+    const registros = await query(
+      `SELECT * FROM (
+         SELECT 'collection' AS type, dc.created_at, u.name AS actor_name, g.name AS galpon_name,
+                (dc.pequeno + dc.mediano + dc.grande + dc.extra_grande + dc.jumbo)::int AS eggs,
+                NULL::numeric AS amount
+         FROM daily_collections dc
+         LEFT JOIN users u ON u.id = dc.created_by
+         LEFT JOIN galpones g ON g.id = dc.galpon_id
+         UNION ALL
+         SELECT 'sale', s.created_at, u.name, NULL, NULL::int, s.total
+         FROM sales s LEFT JOIN users u ON u.id = s.created_by
+         UNION ALL
+         SELECT 'expense', e.created_at, u.name, g.name, NULL::int, e.amount
+         FROM expenses e
+         LEFT JOIN users u ON u.id = e.created_by
+         LEFT JOIN galpones g ON g.id = e.galpon_id
+       ) feed
+       ORDER BY created_at DESC
+       LIMIT 30`
+    );
+    return res.json({ registros });
+  }
+
+  const registros = await query(
+    `SELECT 'collection' AS type, dc.created_at, u.name AS actor_name, g.name AS galpon_name,
+            (dc.pequeno + dc.mediano + dc.grande + dc.extra_grande + dc.jumbo)::int AS eggs,
+            NULL::numeric AS amount
+     FROM daily_collections dc
+     LEFT JOIN users u ON u.id = dc.created_by
+     LEFT JOIN galpones g ON g.id = dc.galpon_id
+     WHERE dc.created_by = $1
+     ORDER BY dc.created_at DESC
+     LIMIT 30`,
+    [req.user!.id]
+  );
+  res.json({ registros });
 });
 
 app.post('/api/collections', requireAuth, async (req, res) => {

@@ -29,7 +29,24 @@ export type CollectionPayload = {
   extraGrande: number;
   jumbo: number;
   rotos: number;
+  galponId?: string | null;
   notes?: string;
+};
+
+export type Galpon = {
+  id: string;
+  name: string;
+  bird_count: number;
+  active: boolean;
+};
+
+export type RegistroItem = {
+  type: 'collection' | 'sale' | 'expense';
+  created_at: string;
+  actor_name: string | null;
+  galpon_name: string | null;
+  eggs: number | null;
+  amount: number | null;
 };
 
 export type SalePayload = {
@@ -49,6 +66,7 @@ export type ExpensePayload = {
   category: string;
   supplier?: string;
   amount: number;
+  galponId?: string | null;
   notes?: string;
 };
 

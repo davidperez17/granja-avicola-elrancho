@@ -126,3 +126,14 @@ CREATE TABLE IF NOT EXISTS notification_reads (
   user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   last_seen_at timestamptz NOT NULL DEFAULT now()
 );
+
+CREATE TABLE IF NOT EXISTS galpones (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  bird_count integer NOT NULL DEFAULT 0 CHECK (bird_count >= 0),
+  active boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+ALTER TABLE daily_collections ADD COLUMN IF NOT EXISTS galpon_id uuid REFERENCES galpones(id);
+ALTER TABLE expenses ADD COLUMN IF NOT EXISTS galpon_id uuid REFERENCES galpones(id);

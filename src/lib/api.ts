@@ -1,4 +1,15 @@
-import type { AdminUser, AppNotification, CollectionPayload, CreateUserPayload, ExpensePayload, Role, SalePayload, User } from '../types';
+import type {
+  AdminUser,
+  AppNotification,
+  CollectionPayload,
+  CreateUserPayload,
+  ExpensePayload,
+  Galpon,
+  RegistroItem,
+  Role,
+  SalePayload,
+  User
+} from '../types';
 
 type ApiOptions = RequestInit & { json?: unknown };
 
@@ -48,6 +59,7 @@ export function getDashboard() {
     inventory: Array<{ category: string; quantity: number }>;
     profit: number;
     profitYesterday: number;
+    birds: number;
   }>('/api/dashboard/today');
 }
 
@@ -77,6 +89,22 @@ export function createUser(payload: CreateUserPayload) {
 
 export function updateUser(id: string, changes: { role?: Role; active?: boolean }) {
   return api<{ user: AdminUser }>(`/api/users/${id}`, { method: 'PATCH', json: changes });
+}
+
+export function getGalpones(all = false) {
+  return api<{ galpones: Galpon[] }>(`/api/galpones${all ? '?all=true' : ''}`);
+}
+
+export function createGalpon(payload: { name: string; birdCount: number }) {
+  return api<{ galpon: Galpon }>('/api/galpones', { method: 'POST', json: payload });
+}
+
+export function updateGalpon(id: string, changes: { name?: string; birdCount?: number; active?: boolean }) {
+  return api<{ galpon: Galpon }>(`/api/galpones/${id}`, { method: 'PATCH', json: changes });
+}
+
+export function getRegistros() {
+  return api<{ registros: RegistroItem[] }>('/api/registros');
 }
 
 export function getNotifications() {

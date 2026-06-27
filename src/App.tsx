@@ -4,18 +4,17 @@ import {
   ArrowRight,
   BarChart3,
   Bell,
-  Building2,
   Check,
   ChevronRight,
   CircleDollarSign,
   ClipboardList,
   Cloud,
   Egg,
+  History,
   Eye,
   EyeOff,
   LineChart,
   LogOut,
-  Minus,
   PackageCheck,
   Plus,
   ReceiptText,
@@ -26,17 +25,21 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
+  Warehouse,
   Wifi,
   WifiOff,
   X
 } from 'lucide-react';
 import {
+  createGalpon,
   createUser,
   forgotPassword,
   getDashboard,
+  getGalpones,
   getInventory,
   getMe,
   getNotifications,
+  getRegistros,
   getUsers,
   login,
   logout,
@@ -45,6 +48,7 @@ import {
   postExpense,
   postSale,
   resetPassword,
+  updateGalpon,
   updateUser
 } from './lib/api';
 import { enqueueOperation, getQueuedOperations, syncQueuedOperations } from './lib/offline';
@@ -55,6 +59,8 @@ import type {
   CollectionPayload,
   CreateUserPayload,
   ExpensePayload,
+  Galpon,
+  RegistroItem,
   Role,
   SalePayload,
   User
@@ -177,59 +183,6 @@ function Toast({ title, detail, onDone }: { title: string; detail?: string; onDo
 
 function Skeleton({ className = '' }: { className?: string }) {
   return <span className={`skeleton ${className}`} aria-hidden="true" />;
-}
-
-function CounterRow({
-  label,
-  helper,
-  value,
-  onChange,
-  tone = 'mint'
-}: {
-  label: string;
-  helper?: string;
-  value: number;
-  onChange: (next: number) => void;
-  tone?: 'mint' | 'warning';
-}) {
-  return (
-    <div className={`counter ${tone === 'warning' ? 'counter-warning' : ''}`}>
-      <span className="counter-icon" aria-hidden="true">
-        {tone === 'warning' ? <AlertTriangle size={22} /> : <Egg size={22} />}
-      </span>
-      <span className="counter-copy">
-        <span className="counter-label">{label}</span>
-        {helper && <span className="counter-helper">{helper}</span>}
-      </span>
-      <button
-        type="button"
-        className="counter-btn counter-btn-ghost"
-        aria-label={`Quitar uno a ${label}`}
-        onClick={() => onChange(Math.max(0, value - 1))}
-        disabled={value <= 0}
-      >
-        <Minus size={20} />
-      </button>
-      <input
-        className="counter-input number-text"
-        type="number"
-        min="0"
-        inputMode="numeric"
-        aria-label={`Cantidad ${label}`}
-        value={value === 0 ? '' : value}
-        placeholder="0"
-        onChange={(event) => onChange(Math.max(0, Math.floor(Number(event.target.value || 0))))}
-      />
-      <button
-        type="button"
-        className="counter-btn counter-btn-solid"
-        aria-label={`Agregar uno a ${label}`}
-        onClick={() => onChange(value + 1)}
-      >
-        <Plus size={20} />
-      </button>
-    </div>
-  );
 }
 
 function ChipGroup<T extends string>({
@@ -497,16 +450,21 @@ function HoyScreen({
   onOpenNotifications: () => void;
 }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null);
+  const [registros, setRegistros] = useState<RegistroItem[]>([]);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
     getDashboard()
       .then(setData)
       .catch((error) => setMessage(error instanceof Error ? error.message : 'No se pudo cargar el resumen.'));
+    getRegistros()
+      .then((result) => setRegistros(result.registros))
+      .catch(() => undefined);
   }, []);
 
   const production = data ? collectionProduction(data.collection) : 0;
   const rotos = data ? Number(data.collection.rotos || 0) : 0;
+  const layingRate = data && data.birds > 0 ? Math.round((production / data.birds) * 100) : null;
 
   return (
     <section className="screen screen-hoy">
@@ -574,7 +532,7 @@ function HoyScreen({
         <article className="stat-card">
           <p className="stat-label">Produccion</p>
           {data ? <p className="stat-value number-text">{formatNumber(production)}</p> : <Skeleton className="skeleton-stat" />}
-          <p className="stat-meta">huevos buenos</p>
+          <p className="stat-meta">{layingRate !== null ? `${layingRate}% postura` : 'huevos buenos'}</p>
         </article>
         <article className="stat-card">
           <p className="stat-label">Ventas</p>
@@ -621,6 +579,19 @@ function HoyScreen({
             </div>
           ))}
       </div>
+
+      <div className="section-head">
+        <h2 className="section-title">Ultimos registros</h2>
+      </div>
+      {registros.length === 0 ? (
+        <p className="empty-inline">Aun no hay registros hoy.</p>
+      ) : (
+        <div className="list">
+          {registros.slice(0, 8).map((item, index) => (
+            <RegistroRow key={`${item.created_at}-${index}`} item={item} showActor />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -629,9 +600,50 @@ function HoyScreen({
 
 type Seg = 'recoleccion' | 'venta' | 'gasto';
 
+const eggColumns: Array<{ key: CategoryKey; letter: string }> = [
+  { key: 'pequeno', letter: 'P' },
+  { key: 'mediano', letter: 'M' },
+  { key: 'grande', letter: 'G' },
+  { key: 'extra_grande', letter: 'XG' },
+  { key: 'jumbo', letter: 'J' }
+];
+
+function GalponSelect({
+  galpones,
+  value,
+  onChange
+}: {
+  galpones: Galpon[];
+  value: string | null | undefined;
+  onChange: (id: string) => void;
+}) {
+  if (galpones.length === 0) {
+    return <p className="galpon-hint">Crea un galpon en Ajustes para asignarlo al registro.</p>;
+  }
+  return (
+    <fieldset className="chip-field">
+      <legend className="field-legend">Galpon</legend>
+      <div className="chip-row">
+        {galpones.map((galpon) => (
+          <button
+            key={galpon.id}
+            type="button"
+            className="chip"
+            aria-pressed={value === galpon.id}
+            onClick={() => onChange(galpon.id)}
+          >
+            {galpon.name} · {formatNumber(galpon.bird_count)} aves
+          </button>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
 function CollectionPanel({
   user,
   online,
+  galpones,
   form,
   setForm,
   onSaved,
@@ -639,6 +651,7 @@ function CollectionPanel({
 }: {
   user: User;
   online: boolean;
+  galpones: Galpon[];
   form: CollectionPayload;
   setForm: (next: CollectionPayload) => void;
   onSaved: (detail: string) => void;
@@ -648,6 +661,13 @@ function CollectionPanel({
   const [loading, setLoading] = useState(false);
 
   const production = categoryOrder.reduce((sum, key) => sum + Number(form[collectionFieldByCategory[key]] || 0), 0);
+
+  useEffect(() => {
+    if (galpones.length > 0 && !form.galponId) {
+      setForm({ ...form, galponId: galpones[0].id });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [galpones]);
 
   function setField(field: keyof CollectionPayload, next: number) {
     setForm({ ...form, [field]: next });
@@ -676,26 +696,55 @@ function CollectionPanel({
 
   return (
     <div className="panel-flow">
-      <DateField value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
-      <p className="seg-help">Escribe la cantidad o usa los botones por tamano.</p>
-      <div className="stack">
-        {categoryOrder.map((key) => (
-          <CounterRow
-            key={key}
-            label={categoryLabels[key]}
-            value={Number(form[collectionFieldByCategory[key]] || 0)}
-            onChange={(next) => setField(collectionFieldByCategory[key], next)}
-          />
-        ))}
-        <CounterRow label="Huevos rotos" helper="Merma del dia" tone="warning" value={form.rotos} onChange={(next) => setField('rotos', next)} />
+      <div className="reg-top">
+        <DateField value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
       </div>
 
-      <div className="total-row">
-        <span className="total-label">Total recolectado</span>
-        <span className="total-value number-text">
-          {formatNumber(production)} <span className="total-unit">huevos buenos</span>
-        </span>
+      <GalponSelect galpones={galpones} value={form.galponId} onChange={(id) => setForm({ ...form, galponId: id })} />
+
+      <div className="egg-card">
+        <p className="egg-card-title">Huevos por clasificacion</p>
+        <div className="egg-grid">
+          {eggColumns.map((col) => {
+            const field = collectionFieldByCategory[col.key];
+            const value = Number(form[field] || 0);
+            return (
+              <label key={col.key} className="egg-col">
+                <span className="egg-col-letter">{col.letter}</span>
+                <input
+                  className="egg-input number-text"
+                  type="number"
+                  min="0"
+                  inputMode="numeric"
+                  placeholder="0"
+                  aria-label={categoryLabels[col.key]}
+                  value={value === 0 ? '' : value}
+                  onChange={(event) => setField(field, Math.max(0, Math.floor(Number(event.target.value || 0))))}
+                />
+              </label>
+            );
+          })}
+        </div>
+        <p className="egg-legend">P pequeno · M mediano · G grande · XG extra grande · J jumbo</p>
       </div>
+
+      <div className="total-bar">
+        <span className="total-bar-label">Total del dia</span>
+        <span className="total-bar-value number-text">{formatNumber(production)}</span>
+      </div>
+
+      <label className="field">
+        <span className="field-label">Huevos rotos (opcional)</span>
+        <input
+          className="field-control number-text"
+          type="number"
+          min="0"
+          inputMode="numeric"
+          placeholder="0"
+          value={form.rotos === 0 ? '' : form.rotos}
+          onChange={(event) => setField('rotos', Math.max(0, Math.floor(Number(event.target.value || 0))))}
+        />
+      </label>
 
       {message && (
         <p className="status-message" role="status" aria-live="polite">
@@ -848,11 +897,13 @@ function SalePanel({
 }
 
 function ExpensePanel({
+  galpones,
   form,
   setForm,
   onSaved,
   onQueued
 }: {
+  galpones: Galpon[];
   form: ExpensePayload;
   setForm: (next: ExpensePayload) => void;
   onSaved: (detail: string) => void;
@@ -884,8 +935,12 @@ function ExpensePanel({
 
   return (
     <div className="panel-flow">
-      <DateField value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
+      <div className="reg-top">
+        <DateField value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
+      </div>
       <p className="seg-help">Registra compras y costos del dia.</p>
+
+      <GalponSelect galpones={galpones} value={form.galponId} onChange={(id) => setForm({ ...form, galponId: id })} />
 
       <ChipGroup
         label="Tipo de gasto"
@@ -940,6 +995,7 @@ function RegistrarScreen({
   user,
   isAdmin,
   online,
+  galpones,
   hidden,
   draft,
   setDraft,
@@ -949,6 +1005,7 @@ function RegistrarScreen({
   user: User;
   isAdmin: boolean;
   online: boolean;
+  galpones: Galpon[];
   hidden: boolean;
   draft: RegistrarDraft;
   setDraft: React.Dispatch<React.SetStateAction<RegistrarDraft>>;
@@ -987,6 +1044,7 @@ function RegistrarScreen({
         <CollectionPanel
           user={user}
           online={online}
+          galpones={galpones}
           form={draft.collection}
           setForm={(next) => setDraft((current) => ({ ...current, collection: next }))}
           onSaved={onSaved}
@@ -1003,6 +1061,7 @@ function RegistrarScreen({
       )}
       {seg === 'gasto' && isAdmin && (
         <ExpensePanel
+          galpones={galpones}
           form={draft.expense}
           setForm={(next) => setDraft((current) => ({ ...current, expense: next }))}
           onSaved={onSaved}
@@ -1137,6 +1196,12 @@ function ReportesScreen() {
           <span className="kv-value number-text">{data ? formatNumber(production) : '—'}</span>
         </div>
         <div className="kv-row">
+          <span className="kv-label">Postura (huevos / aves)</span>
+          <span className="kv-value number-text">
+            {data ? (data.birds > 0 ? `${Math.round((production / data.birds) * 100)}%` : 'Sin aves') : '—'}
+          </span>
+        </div>
+        <div className="kv-row">
           <span className="kv-label">Ventas de hoy</span>
           <span className="kv-value number-text">{data ? formatMoney(data.sales.total) : '—'}</span>
         </div>
@@ -1155,6 +1220,101 @@ function ReportesScreen() {
   );
 }
 
+/* ---------------------------------------------------------------- registros */
+
+const registroTypeLabel: Record<RegistroItem['type'], string> = {
+  collection: 'Recoleccion',
+  sale: 'Venta',
+  expense: 'Gasto'
+};
+
+function registroIcon(type: RegistroItem['type']) {
+  if (type === 'sale') return <CircleDollarSign size={18} />;
+  if (type === 'expense') return <ReceiptText size={18} />;
+  return <Egg size={18} />;
+}
+
+function registroSummary(item: RegistroItem) {
+  if (item.type === 'collection') return `+${formatNumber(item.eggs || 0)} huevos`;
+  if (item.type === 'sale') return formatMoney(Number(item.amount || 0));
+  return `-${formatMoney(Number(item.amount || 0))}`;
+}
+
+function RegistroRow({ item, showActor }: { item: RegistroItem; showActor: boolean }) {
+  const meta = [showActor ? item.actor_name : null, item.galpon_name, timeAgo(item.created_at)].filter(Boolean).join(' · ');
+  return (
+    <div className="list-row">
+      <span className="list-icon" aria-hidden="true">
+        {registroIcon(item.type)}
+      </span>
+      <span className="list-main">
+        <span className="list-title">{registroTypeLabel[item.type]}</span>
+        <span className="list-sub">{meta}</span>
+      </span>
+      <span className={`list-value number-text ${item.type === 'expense' ? 'value-danger' : ''}`}>{registroSummary(item)}</span>
+    </div>
+  );
+}
+
+function HistorialScreen({ user }: { user: User }) {
+  const [registros, setRegistros] = useState<RegistroItem[] | null>(null);
+  const [message, setMessage] = useState('');
+
+  async function load() {
+    try {
+      setRegistros((await getRegistros()).registros);
+      setMessage('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo cargar el historial.');
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  return (
+    <section className="screen screen-pad">
+      <ScreenHeader title="Historial" sub={`Tus registros, ${user.name}`} />
+
+      {message && (
+        <p className="status-message status-message-danger" role="alert">
+          {message}
+        </p>
+      )}
+
+      {!registros && (
+        <div className="list">
+          {[0, 1, 2].map((index) => (
+            <div key={index} className="list-row">
+              <Skeleton className="skeleton-icon" />
+              <Skeleton className="skeleton-line" />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {registros && registros.length === 0 && (
+        <div className="empty-card">
+          <span className="empty-card-icon" aria-hidden="true">
+            <History size={28} strokeWidth={1.7} />
+          </span>
+          <p className="empty-card-title">Sin registros todavia</p>
+          <p className="empty-card-text">Cuando guardes una recoleccion apareceran aqui con su hora.</p>
+        </div>
+      )}
+
+      {registros && registros.length > 0 && (
+        <div className="list">
+          {registros.map((item, index) => (
+            <RegistroRow key={`${item.created_at}-${index}`} item={item} showActor={false} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 /* ----------------------------------------------------------------- ajustes */
 
 function AjustesScreen({
@@ -1163,6 +1323,7 @@ function AjustesScreen({
   pending,
   onSync,
   onOpenUsers,
+  onOpenGalpones,
   onLogout
 }: {
   user: User;
@@ -1170,6 +1331,7 @@ function AjustesScreen({
   pending: number;
   onSync: () => void;
   onOpenUsers: () => void;
+  onOpenGalpones: () => void;
   onLogout: () => void;
 }) {
   const isAdmin = user.role === 'admin';
@@ -1200,13 +1362,13 @@ function AjustesScreen({
 
         {isAdmin && (
           <>
-            <div className="settings-row settings-row-static">
+            <button type="button" className="settings-row" onClick={onOpenGalpones}>
               <span className="settings-icon" aria-hidden="true">
-                <Building2 size={18} />
+                <Warehouse size={18} />
               </span>
-              <span className="settings-label">Perfil de granja</span>
-              <span className="settings-meta">El Rancho</span>
-            </div>
+              <span className="settings-label">Galpones</span>
+              <ChevronRight size={18} className="settings-chevron" />
+            </button>
             <div className="settings-row settings-row-static">
               <span className="settings-icon" aria-hidden="true">
                 <Tag size={18} />
@@ -1457,6 +1619,217 @@ function UsersScreen({ currentUser, onBack, onToast }: { currentUser: User; onBa
 
 /* ------------------------------------------------------------ sync banner */
 
+function GalponCard({
+  galpon,
+  busy,
+  onSaveBirds,
+  onToggleActive
+}: {
+  galpon: Galpon;
+  busy: boolean;
+  onSaveBirds: (birdCount: number) => void;
+  onToggleActive: () => void;
+}) {
+  const [birds, setBirds] = useState(galpon.bird_count);
+  const changed = birds !== galpon.bird_count;
+  return (
+    <div className={`user-card ${galpon.active ? '' : 'user-card-inactive'}`}>
+      <div className="user-card-top">
+        <span className="user-avatar" aria-hidden="true">
+          <Warehouse size={20} />
+        </span>
+        <span className="user-main">
+          <span className="user-name">{galpon.name}</span>
+          <span className="user-email">{formatNumber(galpon.bird_count)} aves</span>
+        </span>
+        <span className={`user-badge ${galpon.active ? 'user-badge-on' : 'user-badge-off'}`}>{galpon.active ? 'Activo' : 'Inactivo'}</span>
+      </div>
+      <div className="galpon-edit">
+        <label className="galpon-edit-field">
+          <span className="field-label">Aves</span>
+          <input
+            className="field-control number-text"
+            type="number"
+            min="0"
+            inputMode="numeric"
+            value={birds === 0 ? '' : birds}
+            placeholder="0"
+            onChange={(event) => setBirds(Math.max(0, Math.floor(Number(event.target.value || 0))))}
+          />
+        </label>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={busy || !changed} onClick={() => onSaveBirds(birds)}>
+          Guardar
+        </button>
+      </div>
+      <button
+        type="button"
+        className={`user-action ${galpon.active ? 'user-action-danger' : ''}`}
+        disabled={busy}
+        onClick={onToggleActive}
+      >
+        {galpon.active ? 'Desactivar' : 'Activar'}
+      </button>
+    </div>
+  );
+}
+
+function GalponesScreen({ onBack, onChanged, onToast }: { onBack: () => void; onChanged: () => void; onToast: (detail: string) => void }) {
+  const [galpones, setGalpones] = useState<Galpon[] | null>(null);
+  const [message, setMessage] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [birds, setBirds] = useState(0);
+  const [formMessage, setFormMessage] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function load() {
+    try {
+      setGalpones((await getGalpones(true)).galpones);
+      setMessage('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudieron cargar los galpones.');
+    }
+  }
+
+  useEffect(() => {
+    load();
+  }, []);
+
+  async function submitCreate() {
+    setSaving(true);
+    setFormMessage('');
+    try {
+      await createGalpon({ name: name.trim(), birdCount: birds });
+      onToast('Galpon creado');
+      setName('');
+      setBirds(0);
+      setCreating(false);
+      await load();
+      onChanged();
+    } catch (error) {
+      setFormMessage(error instanceof Error ? error.message : 'No se pudo crear el galpon.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function patch(galpon: Galpon, changes: { birdCount?: number; active?: boolean }) {
+    setBusyId(galpon.id);
+    setMessage('');
+    try {
+      await updateGalpon(galpon.id, changes);
+      onToast('Galpon actualizado');
+      await load();
+      onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo actualizar.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  return (
+    <section className="screen screen-pad">
+      <div className="subscreen-top">
+        <button type="button" className="btn btn-ghost btn-icon" aria-label="Volver a ajustes" onClick={onBack}>
+          <ChevronRight size={20} className="flip" />
+        </button>
+        <div>
+          <h1 className="screen-title">Galpones</h1>
+          <p className="screen-sub">Galpones y numero de aves</p>
+        </div>
+      </div>
+
+      {message && (
+        <p className="status-message status-message-danger" role="alert">
+          {message}
+        </p>
+      )}
+
+      {!creating ? (
+        <button type="button" className="btn btn-primary btn-block" onClick={() => setCreating(true)}>
+          <Plus size={18} />
+          Nuevo galpon
+        </button>
+      ) : (
+        <div className="create-card">
+          <p className="create-card-title">Nuevo galpon</p>
+          <label className="field">
+            <span className="field-label">Nombre</span>
+            <input className="field-control" placeholder="Galpon 2" value={name} onChange={(event) => setName(event.target.value)} />
+          </label>
+          <label className="field">
+            <span className="field-label">Numero de aves</span>
+            <input
+              className="field-control number-text"
+              type="number"
+              min="0"
+              inputMode="numeric"
+              placeholder="0"
+              value={birds === 0 ? '' : birds}
+              onChange={(event) => setBirds(Math.max(0, Math.floor(Number(event.target.value || 0))))}
+            />
+          </label>
+          {formMessage && (
+            <p className="status-message status-message-danger" role="alert">
+              {formMessage}
+            </p>
+          )}
+          <div className="confirm-inline-actions">
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              onClick={() => {
+                setCreating(false);
+                setName('');
+                setBirds(0);
+                setFormMessage('');
+              }}
+            >
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-primary btn-sm" onClick={submitCreate} disabled={saving || name.trim().length < 1} aria-busy={saving}>
+              {saving ? 'Creando...' : 'Crear'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="stack">
+        {!galpones &&
+          [0, 1].map((index) => (
+            <div key={index} className="user-card">
+              <div className="user-card-top">
+                <Skeleton className="skeleton-icon" />
+                <Skeleton className="skeleton-line" />
+              </div>
+            </div>
+          ))}
+        {galpones && galpones.length === 0 && (
+          <div className="empty-card">
+            <span className="empty-card-icon" aria-hidden="true">
+              <Warehouse size={28} strokeWidth={1.7} />
+            </span>
+            <p className="empty-card-title">Sin galpones</p>
+            <p className="empty-card-text">Crea tu primer galpon para asignarlo a los registros.</p>
+          </div>
+        )}
+        {galpones &&
+          galpones.map((galpon) => (
+            <GalponCard
+              key={galpon.id}
+              galpon={galpon}
+              busy={busyId === galpon.id}
+              onSaveBirds={(birdCount) => patch(galpon, { birdCount })}
+              onToggleActive={() => patch(galpon, { active: !galpon.active })}
+            />
+          ))}
+      </div>
+    </section>
+  );
+}
+
 function NotificationsSheet({
   open,
   notifications,
@@ -1536,7 +1909,7 @@ function SyncBanner({ online, pending, onSync }: { online: boolean; pending: num
 
 /* ------------------------------------------------------------------- shell */
 
-type ViewKey = 'hoy' | 'registrar' | 'inventario' | 'reportes' | 'ajustes' | 'usuarios';
+type ViewKey = 'hoy' | 'registrar' | 'historial' | 'inventario' | 'reportes' | 'ajustes' | 'usuarios' | 'galpones';
 
 type RegistrarDraft = {
   seg: Seg;
@@ -1545,9 +1918,10 @@ type RegistrarDraft = {
   expense: ExpensePayload;
 };
 
-const NAV: Array<{ key: ViewKey; label: string; icon: React.ReactNode; adminOnly?: boolean }> = [
+const NAV: Array<{ key: ViewKey; label: string; icon: React.ReactNode; adminOnly?: boolean; workerOnly?: boolean }> = [
   { key: 'hoy', label: 'Hoy', icon: <BarChart3 size={22} />, adminOnly: true },
   { key: 'registrar', label: 'Registrar', icon: <ClipboardList size={22} /> },
+  { key: 'historial', label: 'Historial', icon: <History size={22} />, workerOnly: true },
   { key: 'inventario', label: 'Inventario', icon: <PackageCheck size={22} />, adminOnly: true },
   { key: 'reportes', label: 'Reportes', icon: <LineChart size={22} />, adminOnly: true },
   { key: 'ajustes', label: 'Ajustes', icon: <Settings size={22} /> }
@@ -1555,8 +1929,8 @@ const NAV: Array<{ key: ViewKey; label: string; icon: React.ReactNode; adminOnly
 
 function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const isAdmin = user.role === 'admin';
-  const nav = useMemo(() => NAV.filter((item) => isAdmin || !item.adminOnly), [isAdmin]);
-  const allowed: ViewKey[] = [...nav.map((item) => item.key), ...(isAdmin ? (['usuarios'] as ViewKey[]) : [])];
+  const nav = useMemo(() => NAV.filter((item) => (isAdmin ? !item.workerOnly : !item.adminOnly)), [isAdmin]);
+  const allowed: ViewKey[] = [...nav.map((item) => item.key), ...(isAdmin ? (['usuarios', 'galpones'] as ViewKey[]) : [])];
 
   const readHashView = (): ViewKey => {
     const hash = window.location.hash.replace('#', '') as ViewKey;
@@ -1576,9 +1950,18 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [galpones, setGalpones] = useState<Galpon[]>([]);
 
   async function refreshPending() {
     setPending((await getQueuedOperations()).length);
+  }
+
+  async function loadGalpones() {
+    try {
+      setGalpones((await getGalpones()).galpones);
+    } catch {
+      /* sin conexion: se reintenta al volver el foco */
+    }
   }
 
   async function loadNotifications() {
@@ -1607,6 +1990,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
 
   useEffect(() => {
     refreshPending();
+    loadGalpones();
     const goOnline = () => {
       setOnline(true);
       runSync();
@@ -1669,12 +2053,14 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
           user={user}
           isAdmin={isAdmin}
           online={online}
+          galpones={galpones}
           hidden={view !== 'registrar'}
           draft={draft}
           setDraft={setDraft}
           onSaved={handleSaved}
           onQueued={refreshPending}
         />
+        {view === 'historial' && !isAdmin && <HistorialScreen user={user} />}
         {view === 'inventario' && isAdmin && <InventarioScreen />}
         {view === 'reportes' && isAdmin && <ReportesScreen />}
         {view === 'ajustes' && (
@@ -1684,11 +2070,19 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             pending={pending}
             onSync={runSync}
             onOpenUsers={() => selectView('usuarios')}
+            onOpenGalpones={() => selectView('galpones')}
             onLogout={onLogout}
           />
         )}
         {view === 'usuarios' && isAdmin && (
           <UsersScreen currentUser={user} onBack={() => selectView('ajustes')} onToast={(detail) => setToast({ title: 'Listo', detail })} />
+        )}
+        {view === 'galpones' && isAdmin && (
+          <GalponesScreen
+            onBack={() => selectView('ajustes')}
+            onChanged={loadGalpones}
+            onToast={(detail) => setToast({ title: 'Listo', detail })}
+          />
         )}
       </main>
 
@@ -1702,7 +2096,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             key={item.key}
             type="button"
             className="nav-item"
-            aria-current={view === item.key || (item.key === 'ajustes' && view === 'usuarios') ? 'page' : undefined}
+            aria-current={view === item.key || (item.key === 'ajustes' && (view === 'usuarios' || view === 'galpones')) ? 'page' : undefined}
             onClick={() => selectView(item.key)}
           >
             {item.icon}

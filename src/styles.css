@@ -943,6 +943,141 @@ a:focus-visible {
   color: var(--brand);
 }
 
+/* ------------------------------------------------------ recoleccion compacta */
+
+.reg-top {
+  display: flex;
+}
+
+.galpon-hint {
+  margin: 0;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius);
+  background: var(--color-mint-50);
+  padding: 0.75rem 0.875rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.egg-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.egg-card-title {
+  margin: 0 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.egg-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.5rem;
+}
+
+.egg-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+}
+
+.egg-col-letter {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--ink-mute);
+}
+
+.egg-input {
+  width: 100%;
+  min-width: 0;
+  min-height: 3rem;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background: #f4fbef;
+  color: var(--ink);
+  font-size: 1.125rem;
+  font-weight: 700;
+  padding: 0 0.25rem;
+  -moz-appearance: textfield;
+  appearance: textfield;
+  transition: border-color 140ms ease, background-color 140ms ease;
+}
+
+.egg-input::-webkit-outer-spin-button,
+.egg-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.egg-input:focus {
+  background: #fff;
+  border-color: var(--color-mint-500);
+}
+
+.egg-legend {
+  margin: 0.75rem 0 0;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1.5;
+  color: var(--ink-mute);
+}
+
+.total-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--color-mint-100);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.875rem 1.125rem;
+}
+
+.total-bar-label {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.total-bar-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--brand-deep);
+}
+
+.value-danger {
+  color: var(--danger);
+}
+
+.empty-inline {
+  margin: 0;
+  padding: 0.75rem 0.25rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-mute);
+}
+
+.galpon-edit {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.625rem;
+  margin-top: 0.75rem;
+}
+
+.galpon-edit-field {
+  flex: 1;
+  display: grid;
+  gap: 0.375rem;
+}
+
 /* --------------------------------------------------------------------- hoy */
 
 .hoy-hero {
