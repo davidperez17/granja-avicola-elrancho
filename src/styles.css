@@ -47,8 +47,8 @@
   --nav-h: 4.75rem;
   /* Escala de apilamiento (de menor a mayor) */
   --z-nav: 30;
+  --z-banner: 50;
   --z-modal: 60;
-  --z-banner: 70;
   --z-toast: 80;
   --z-skip: 100;
 }
