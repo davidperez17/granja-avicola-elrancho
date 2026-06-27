@@ -16,6 +16,7 @@ import {
   LineChart,
   LogOut,
   PackageCheck,
+  Pencil,
   Plus,
   ReceiptText,
   RotateCcw,
@@ -31,6 +32,7 @@ import {
   X
 } from 'lucide-react';
 import {
+  adjustInventory,
   createGalpon,
   createUser,
   forgotPassword,
@@ -1078,6 +1080,9 @@ function InventarioScreen() {
   const [inventory, setInventory] = useState<Array<{ category: string; quantity: number; updated_at: string }>>([]);
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, number>>({});
+  const [saving, setSaving] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -1095,6 +1100,30 @@ function InventarioScreen() {
   useEffect(() => {
     load();
   }, []);
+
+  function startEditing() {
+    setDrafts(Object.fromEntries(inventory.map((item) => [item.category, Number(item.quantity || 0)])));
+    setMessage('');
+    setEditing(true);
+  }
+
+  async function saveAdjustments() {
+    setSaving(true);
+    setMessage('');
+    try {
+      const changed = inventory.filter((item) => drafts[item.category] !== undefined && drafts[item.category] !== Number(item.quantity || 0));
+      for (const item of changed) {
+        await adjustInventory(item.category, drafts[item.category]);
+      }
+      await load();
+      setEditing(false);
+      setMessage(changed.length ? `Inventario ajustado (${changed.length} categoria${changed.length > 1 ? 's' : ''}).` : '');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo ajustar el inventario.');
+    } finally {
+      setSaving(false);
+    }
+  }
 
   const totalEggs = inventory.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   const max = Math.max(1, ...inventory.map((item) => Number(item.quantity || 0)));
@@ -1130,6 +1159,7 @@ function InventarioScreen() {
         {!loading &&
           inventory.map((item) => {
             const quantity = Number(item.quantity || 0);
+            const label = categoryLabels[item.category as CategoryKey] ?? item.category;
             return (
               <div key={item.category} className="inv-card">
                 <div className="inv-card-top">
@@ -1137,23 +1167,61 @@ function InventarioScreen() {
                     <Egg size={18} />
                   </span>
                   <span className="list-main">
-                    <span className="list-title">{categoryLabels[item.category as CategoryKey] ?? item.category}</span>
+                    <span className="list-title">{label}</span>
                     <span className="list-sub">{formatNumber(quantity)} huevos</span>
                   </span>
-                  <span className="list-value number-text">{formatNumber(quantity)}</span>
+                  {editing ? (
+                    <input
+                      className="field-control number-text inv-edit-input"
+                      type="number"
+                      min="0"
+                      inputMode="numeric"
+                      aria-label={`Ajustar ${label}`}
+                      value={drafts[item.category] === 0 ? '' : drafts[item.category] ?? ''}
+                      placeholder="0"
+                      onChange={(event) =>
+                        setDrafts((current) => ({
+                          ...current,
+                          [item.category]: Math.max(0, Math.floor(Number(event.target.value || 0)))
+                        }))
+                      }
+                    />
+                  ) : (
+                    <span className="list-value number-text">{formatNumber(quantity)}</span>
+                  )}
                 </div>
-                <div className="inv-bar" aria-hidden="true">
-                  <span style={{ width: `${Math.round((quantity / max) * 100)}%` }} />
-                </div>
+                {!editing && (
+                  <div className="inv-bar" aria-hidden="true">
+                    <span style={{ width: `${Math.round((quantity / max) * 100)}%` }} />
+                  </div>
+                )}
               </div>
             );
           })}
       </div>
 
-      <button type="button" className="btn btn-secondary btn-block" onClick={load} disabled={loading}>
-        <RotateCcw size={18} />
-        Actualizar inventario
-      </button>
+      {editing ? (
+        <div className="confirm-inline-actions">
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditing(false)} disabled={saving}>
+            Cancelar
+          </button>
+          <button type="button" className="btn btn-primary btn-sm" onClick={saveAdjustments} disabled={saving} aria-busy={saving}>
+            <Check size={18} />
+            {saving ? 'Guardando...' : 'Guardar ajustes'}
+          </button>
+        </div>
+      ) : (
+        <div className="inv-actions">
+          <button type="button" className="btn btn-primary btn-block" onClick={startEditing} disabled={loading || inventory.length === 0}>
+            <Pencil size={18} />
+            Ajustar inventario
+          </button>
+          <button type="button" className="btn btn-secondary btn-block" onClick={load} disabled={loading}>
+            <RotateCcw size={18} />
+            Actualizar
+          </button>
+        </div>
+      )}
     </section>
   );
 }

@@ -91,6 +91,13 @@ export function updateUser(id: string, changes: { role?: Role; active?: boolean 
   return api<{ user: AdminUser }>(`/api/users/${id}`, { method: 'PATCH', json: changes });
 }
 
+export function adjustInventory(category: string, quantity: number) {
+  return api<{ inventory: { category: string; quantity: number; updated_at: string } }>(`/api/inventory/${category}`, {
+    method: 'PATCH',
+    json: { quantity }
+  });
+}
+
 export function getGalpones(all = false) {
   return api<{ galpones: Galpon[] }>(`/api/galpones${all ? '?all=true' : ''}`);
 }

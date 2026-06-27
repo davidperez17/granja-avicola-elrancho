@@ -363,6 +363,28 @@ app.get('/api/inventory', requireAuth, requireRole('admin'), async (_req, res) =
   res.json({ inventory: await query('SELECT category, quantity, updated_at FROM inventory ORDER BY category') });
 });
 
+app.patch('/api/inventory/:category', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const category = categorySchema.parse(req.params.category);
+    const { quantity } = z.object({ quantity: z.coerce.number().int().min(0) }).parse(req.body);
+    const previous = await queryOne<{ quantity: number }>('SELECT quantity FROM inventory WHERE category = $1', [category]);
+    const inventory = await queryOne(
+      'UPDATE inventory SET quantity = $1, updated_at = now() WHERE category = $2 RETURNING category, quantity, updated_at',
+      [quantity, category]
+    );
+    if (!inventory) return res.status(404).json({ message: 'Categoria no encontrada.' });
+    await addNotification({
+      type: 'low_inventory',
+      title: 'Inventario ajustado',
+      body: `${categoryLabel[category] ?? category}: ${Number(previous?.quantity || 0)} → ${quantity} huevos`,
+      actorName: req.user!.name
+    });
+    res.json({ inventory });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
+});
+
 const galponCreateSchema = z.object({
   name: z.string().min(1).max(80),
   birdCount: z.coerce.number().int().min(0).default(0)
