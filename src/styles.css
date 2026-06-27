@@ -2237,7 +2237,7 @@ button.settings-row:hover:not(:disabled) {
 .notif-scrim {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   justify-content: flex-end;

@@ -1,4 +1,5 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   AlertTriangle,
   ArrowRight,
@@ -2048,7 +2049,7 @@ function NotificationsSheet({
   }, [open, onClose]);
 
   if (!open) return null;
-  return (
+  return createPortal(
     <div className="notif-scrim" role="dialog" aria-modal="true" aria-label="Notificaciones" onClick={onClose}>
       <div className="notif-sheet" onClick={(event) => event.stopPropagation()}>
         <div className="notif-head">
@@ -2085,7 +2086,8 @@ function NotificationsSheet({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -2178,7 +2180,7 @@ function NotifSettingsSheet({
   if (!open) return null;
   const active = status.supported && status.permission === 'granted' && status.subscribed;
 
-  return (
+  return createPortal(
     <div className="notif-scrim" role="dialog" aria-modal="true" aria-label="Notificaciones" onClick={onClose}>
       <div className="notif-sheet" onClick={(event) => event.stopPropagation()}>
         <div className="notif-head">
@@ -2234,7 +2236,8 @@ function NotifSettingsSheet({
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
