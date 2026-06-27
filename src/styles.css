@@ -1094,6 +1094,14 @@ a:focus-visible {
   overflow: hidden;
 }
 
+/* Si un banner (sync/push) precede a la pantalla Hoy, el hero ya no debe
+   sangrar hacia arriba: el banner ocupa el tope y aporta el safe-area. Sin
+   esto, el margin negativo monta el hero sobre el banner. */
+:is(.sync-banner, .push-banner) + .screen-hoy .hoy-hero {
+  margin-top: 0;
+  padding-top: 1.75rem;
+}
+
 /* Imagen de cabecera opcional: colocar en public/brand/hero.jpg.
    Si no existe, onError la oculta y queda el degradado verde. */
 .hoy-hero-img {
