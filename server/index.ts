@@ -24,6 +24,12 @@ if (pushEnabled) {
 app.use(express.json({ limit: '1mb' }));
 app.use(cookieParser());
 
+// Fecha "hoy" en zona horaria de Guatemala (UTC-6), independiente de la sesion
+// de Postgres / pooler. Se usa en vez de CURRENT_DATE (que es UTC en Neon).
+const GT_TZ = 'America/Guatemala';
+const GT_TODAY = `(now() AT TIME ZONE '${GT_TZ}')::date`;
+const gtToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: GT_TZ }).format(new Date());
+
 const categories = ['pequeno', 'mediano', 'grande', 'extra_grande', 'jumbo'] as const;
 const categorySchema = z.enum(categories);
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -380,13 +386,13 @@ app.get('/api/dashboard/today', requireAuth, requireRole('admin'), async (_req, 
       `SELECT COALESCE(sum(pequeno),0)::int pequeno, COALESCE(sum(mediano),0)::int mediano,
               COALESCE(sum(grande),0)::int grande, COALESCE(sum(extra_grande),0)::int extra_grande,
               COALESCE(sum(jumbo),0)::int jumbo, COALESCE(sum(rotos),0)::int rotos
-       FROM daily_collections WHERE collection_date = CURRENT_DATE`
+       FROM daily_collections WHERE collection_date = ${GT_TODAY}`
     ),
-    queryOne('SELECT COALESCE(sum(total),0)::float total, count(*)::int count FROM sales WHERE sale_date = CURRENT_DATE'),
-    queryOne('SELECT COALESCE(sum(amount),0)::float total, count(*)::int count FROM expenses WHERE expense_date = CURRENT_DATE'),
+    queryOne(`SELECT COALESCE(sum(total),0)::float total, count(*)::int count FROM sales WHERE sale_date = ${GT_TODAY}`),
+    queryOne(`SELECT COALESCE(sum(amount),0)::float total, count(*)::int count FROM expenses WHERE expense_date = ${GT_TODAY}`),
     query('SELECT category, quantity FROM inventory ORDER BY category'),
-    queryOne("SELECT COALESCE(sum(total),0)::float total FROM sales WHERE sale_date = CURRENT_DATE - INTERVAL '1 day'"),
-    queryOne("SELECT COALESCE(sum(amount),0)::float total FROM expenses WHERE expense_date = CURRENT_DATE - INTERVAL '1 day'"),
+    queryOne(`SELECT COALESCE(sum(total),0)::float total FROM sales WHERE sale_date = ${GT_TODAY} - INTERVAL '1 day'`),
+    queryOne(`SELECT COALESCE(sum(amount),0)::float total FROM expenses WHERE expense_date = ${GT_TODAY} - INTERVAL '1 day'`),
     queryOne('SELECT COALESCE(sum(bird_count),0)::int birds FROM galpones WHERE active')
   ]);
 
@@ -406,11 +412,11 @@ app.get('/api/reports', requireAuth, requireRole('admin'), async (req, res) => {
     if (granularity === 'day') {
       series = await query(
         `WITH days AS (
-           SELECT generate_series(CURRENT_DATE - ($1::int - 1), CURRENT_DATE, INTERVAL '1 day')::date AS d
+           SELECT generate_series(${GT_TODAY} - ($1::int - 1), ${GT_TODAY}, INTERVAL '1 day')::date AS d
          ),
-         col AS (SELECT collection_date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date > CURRENT_DATE - $1::int GROUP BY collection_date),
-         sal AS (SELECT sale_date d, sum(total)::float total FROM sales WHERE sale_date > CURRENT_DATE - $1::int GROUP BY sale_date),
-         exp AS (SELECT expense_date d, sum(amount)::float total FROM expenses WHERE expense_date > CURRENT_DATE - $1::int GROUP BY expense_date)
+         col AS (SELECT collection_date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date > ${GT_TODAY} - $1::int GROUP BY collection_date),
+         sal AS (SELECT sale_date d, sum(total)::float total FROM sales WHERE sale_date > ${GT_TODAY} - $1::int GROUP BY sale_date),
+         exp AS (SELECT expense_date d, sum(amount)::float total FROM expenses WHERE expense_date > ${GT_TODAY} - $1::int GROUP BY expense_date)
          SELECT to_char(days.d, 'DD/MM') label, days.d::text date,
                 COALESCE(col.eggs,0)::int eggs,
                 COALESCE(sal.total,0)::float sales,
@@ -426,11 +432,11 @@ app.get('/api/reports', requireAuth, requireRole('admin'), async (req, res) => {
     } else {
       series = await query(
         `WITH months AS (
-           SELECT generate_series(date_trunc('month', CURRENT_DATE) - INTERVAL '11 months', date_trunc('month', CURRENT_DATE), INTERVAL '1 month')::date AS d
+           SELECT generate_series(date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months', date_trunc('month', ${GT_TODAY}), INTERVAL '1 month')::date AS d
          ),
-         col AS (SELECT date_trunc('month', collection_date)::date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '11 months' GROUP BY 1),
-         sal AS (SELECT date_trunc('month', sale_date)::date d, sum(total)::float total FROM sales WHERE sale_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '11 months' GROUP BY 1),
-         exp AS (SELECT date_trunc('month', expense_date)::date d, sum(amount)::float total FROM expenses WHERE expense_date >= date_trunc('month', CURRENT_DATE) - INTERVAL '11 months' GROUP BY 1)
+         col AS (SELECT date_trunc('month', collection_date)::date d, sum(${eggsExpr})::int eggs FROM daily_collections WHERE collection_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' GROUP BY 1),
+         sal AS (SELECT date_trunc('month', sale_date)::date d, sum(total)::float total FROM sales WHERE sale_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' GROUP BY 1),
+         exp AS (SELECT date_trunc('month', expense_date)::date d, sum(amount)::float total FROM expenses WHERE expense_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' GROUP BY 1)
          SELECT to_char(months.d, 'Mon') label, months.d::text date,
                 COALESCE(col.eggs,0)::int eggs,
                 COALESCE(sal.total,0)::float sales,
@@ -444,7 +450,7 @@ app.get('/api/reports', requireAuth, requireRole('admin'), async (req, res) => {
       );
     }
 
-    const since = `CURRENT_DATE - ${period}::int`;
+    const since = `${GT_TODAY} - ${period}::int`;
     const [byCategoryProduction, byCategorySales, birds] = await Promise.all([
       queryOne(
         `SELECT COALESCE(sum(pequeno),0)::int pequeno, COALESCE(sum(mediano),0)::int mediano,
@@ -610,7 +616,7 @@ app.post('/api/collections', requireAuth, async (req, res) => {
 });
 
 app.get('/api/collections', requireAuth, requireRole('admin'), async (req, res) => {
-  const date = typeof req.query.date === 'string' ? req.query.date : new Date().toISOString().slice(0, 10);
+  const date = typeof req.query.date === 'string' ? req.query.date : gtToday();
   res.json({ collections: await query('SELECT * FROM daily_collections WHERE collection_date = $1 ORDER BY created_at DESC', [date]) });
 });
 
@@ -626,7 +632,7 @@ app.post('/api/sales', requireAuth, requireRole('admin'), async (req, res) => {
 });
 
 app.get('/api/sales', requireAuth, requireRole('admin'), async (req, res) => {
-  const date = typeof req.query.date === 'string' ? req.query.date : new Date().toISOString().slice(0, 10);
+  const date = typeof req.query.date === 'string' ? req.query.date : gtToday();
   res.json({ sales: await query('SELECT * FROM sales WHERE sale_date = $1 ORDER BY created_at DESC', [date]) });
 });
 
@@ -642,7 +648,7 @@ app.post('/api/expenses', requireAuth, requireRole('admin'), async (req, res) =>
 });
 
 app.get('/api/expenses', requireAuth, requireRole('admin'), async (req, res) => {
-  const date = typeof req.query.date === 'string' ? req.query.date : new Date().toISOString().slice(0, 10);
+  const date = typeof req.query.date === 'string' ? req.query.date : gtToday();
   res.json({ expenses: await query('SELECT * FROM expenses WHERE expense_date = $1 ORDER BY created_at DESC', [date]) });
 });
 

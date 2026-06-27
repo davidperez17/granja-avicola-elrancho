@@ -92,7 +92,9 @@ const collectionFieldByCategory: Record<CategoryKey, keyof CollectionPayload> = 
 
 const expenseCategories = ['Alimento', 'Vacunas', 'Medicamentos', 'Materia prima', 'Transporte', 'Otros'];
 
-const dateToday = () => new Date().toISOString().slice(0, 10);
+// Fecha "hoy" en zona horaria de Guatemala (UTC-6), igual que el server,
+// independiente de la zona del dispositivo. en-CA formatea como YYYY-MM-DD.
+const dateToday = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Guatemala' }).format(new Date());
 
 function greeting() {
   const hour = new Date().getHours();
