@@ -2346,6 +2346,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   async function enableNotifications() {
     const result = await subscribeToPush();
     await refreshPushStatus();
+    setNotifSettingsOpen(false);
     if (result.ok) {
       setToast({ title: 'Notificaciones activadas', detail: 'Recibiras avisos en este dispositivo.' });
     } else if (result.reason === 'sin-configurar') {
@@ -2358,6 +2359,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   async function disableNotifications() {
     await unsubscribeFromPush();
     await refreshPushStatus();
+    setNotifSettingsOpen(false);
     setToast({ title: 'Notificaciones desactivadas' });
   }
 
