@@ -84,7 +84,9 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90, `carton` = 30.
    - **Login**: header verde de marca (back + wordmark + título del modo) + hoja blanca con el
      formulario que crece para llenar la pantalla.
 2. **Registrar** (control segmentado): Recolección (compacta, grid P/M/G/XG/J + total + rotos),
-   Venta y Gasto (estos dos solo admin). Selector de **galpón** en recolección y gasto. La venta
+   Venta y Gasto (estos dos solo admin). **Galpón** = botones en fila/columnas
+   (`.galpon-list` flex-wrap / `.galpon-option`: nombre + aves apilados dentro, check al seleccionar);
+   **Fecha** campo estándar. Galpón primero. La venta
    tiene producto **Cajón (360) · Oferta (90) · Cartón (30)**; cartón/cajón con categoría libre,
    oferta fuerza `grande`. Huevos/unidad centralizados en `eggsPerUnit()` (cliente y server).
 3. **Hoy** (admin): saludo **según la hora** + imagen hero, ganancia con **tendencia real vs ayer (%)**, stats

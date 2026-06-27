@@ -259,9 +259,9 @@ function ChipGroup<T extends string>({
 
 function DateField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   return (
-    <label className="date-field">
+    <label className="field">
       <span className="field-label">Fecha</span>
-      <input className="field-control date-input" type="date" max={dateToday()} value={value} onChange={(event) => onChange(event.target.value)} />
+      <input className="field-control" type="date" max={dateToday()} value={value} onChange={(event) => onChange(event.target.value)} />
     </label>
   );
 }
@@ -662,18 +662,23 @@ function GalponSelect({
   return (
     <fieldset className="chip-field">
       <legend className="field-legend">Galpon</legend>
-      <div className="chip-row">
-        {galpones.map((galpon) => (
-          <button
-            key={galpon.id}
-            type="button"
-            className="chip"
-            aria-pressed={value === galpon.id}
-            onClick={() => onChange(galpon.id)}
-          >
-            {galpon.name} · {formatNumber(galpon.bird_count)} aves
-          </button>
-        ))}
+      <div className="galpon-list">
+        {galpones.map((galpon) => {
+          const selected = value === galpon.id;
+          return (
+            <button
+              key={galpon.id}
+              type="button"
+              className="galpon-option"
+              aria-pressed={selected}
+              onClick={() => onChange(galpon.id)}
+            >
+              {selected && <Check size={16} className="galpon-option-check" />}
+              <span className="galpon-option-name">{galpon.name}</span>
+              <span className="galpon-option-meta number-text">{formatNumber(galpon.bird_count)} aves</span>
+            </button>
+          );
+        })}
       </div>
     </fieldset>
   );
@@ -735,11 +740,9 @@ function CollectionPanel({
 
   return (
     <div className="panel-flow">
-      <div className="reg-top">
-        <DateField value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
-      </div>
-
       <GalponSelect galpones={galpones} value={form.galponId} onChange={(id) => setForm({ ...form, galponId: id })} />
+
+      <DateField value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
 
       <div className="egg-card">
         <p className="egg-card-title">Huevos por clasificacion</p>
@@ -975,12 +978,10 @@ function ExpensePanel({
 
   return (
     <div className="panel-flow">
-      <div className="reg-top">
-        <DateField value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
-      </div>
-      <p className="seg-help">Registra compras y costos del dia.</p>
-
       <GalponSelect galpones={galpones} value={form.galponId} onChange={(id) => setForm({ ...form, galponId: id })} />
+
+      <DateField value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
+      <p className="seg-help">Registra compras y costos del dia.</p>
 
       <ChipGroup
         label="Tipo de gasto"
@@ -2399,8 +2400,8 @@ function CollectionEditor({
   return (
     <EditorSheet title="Editar recoleccion" onClose={onClose}>
       <div className="panel-flow">
-        <DateField value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
         <GalponSelect galpones={galpones} value={form.galponId} onChange={(id) => setForm({ ...form, galponId: id })} />
+        <DateField value={form.collectionDate} onChange={(value) => setForm({ ...form, collectionDate: value })} />
         <div className="egg-card">
           <p className="egg-card-title">Huevos por clasificacion</p>
           <div className="egg-grid">
@@ -2605,8 +2606,8 @@ function ExpenseEditor({
   return (
     <EditorSheet title="Editar gasto" onClose={onClose}>
       <div className="panel-flow">
-        <DateField value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
         <GalponSelect galpones={galpones} value={form.galponId} onChange={(id) => setForm({ ...form, galponId: id })} />
+        <DateField value={form.expenseDate} onChange={(value) => setForm({ ...form, expenseDate: value })} />
         <ChipGroup
           label="Tipo de gasto"
           value={form.category}

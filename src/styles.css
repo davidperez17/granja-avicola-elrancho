@@ -562,23 +562,62 @@ a:focus-visible {
   opacity: 0.65;
 }
 
-/* Fecha compacta: etiqueta + input al ancho de su contenido, no a todo el panel. */
-.date-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.625rem;
-  align-self: flex-start;
+/* Galpon: botones en fila (columnas lado a lado), contenido apilado dentro. */
+.galpon-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
 }
 
-.date-field .field-label {
-  flex: none;
+.galpon-option {
+  position: relative;
+  flex: 1 1 6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-height: 3.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease;
 }
 
-.date-input {
-  width: auto;
-  min-width: 0;
-  min-height: 2.75rem;
-  padding: 0 0.875rem;
+.galpon-option:hover {
+  border-color: var(--color-mint-500);
+}
+
+.galpon-option-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.galpon-option-meta {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-mute);
+}
+
+.galpon-option-check {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  color: var(--brand);
+}
+
+.galpon-option[aria-pressed="true"] {
+  border-color: var(--brand);
+  background: var(--color-mint-100);
+}
+
+.galpon-option[aria-pressed="true"] .galpon-option-name {
+  color: var(--brand-deep);
+}
+
+.galpon-option[aria-pressed="true"] .galpon-option-meta {
+  color: var(--brand);
 }
 
 .field-control::placeholder {
@@ -950,10 +989,6 @@ a:focus-visible {
 }
 
 /* ------------------------------------------------------ recoleccion compacta */
-
-.reg-top {
-  display: flex;
-}
 
 .galpon-hint {
   margin: 0;
