@@ -1,6 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="El Rancho">
-  <rect width="512" height="512" rx="112" fill="#62bf40" />
-  <circle cx="256" cy="262" r="142" fill="#eff9ec" />
-  <path fill="#14260d" d="M172 286c0-70 38-124 84-124s84 54 84 124c0 48-30 78-84 78s-84-30-84-78Zm84-164 36 44h-72l36-44Z" />
-  <path fill="#4e9933" d="M184 356h144v34H184z" />
-</svg>
