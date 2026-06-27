@@ -830,7 +830,6 @@ function SalePanel({
 
   function updateItem(next: Partial<SalePayload['items'][number]>) {
     const updated = { ...item, ...next };
-    if (updated.productType === 'oferta_grande') updated.category = 'grande';
     setForm({ ...form, items: [updated] });
   }
 
@@ -2484,7 +2483,6 @@ function SaleEditor({
 
   function updateItem(next: Partial<SalePayload['items'][number]>) {
     const updated = { ...item, ...next };
-    if (updated.productType === 'oferta_grande') updated.category = 'grande';
     setForm({ ...form, items: [updated] });
   }
 
