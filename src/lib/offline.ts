@@ -33,7 +33,7 @@ export async function clearQueuedOperations(ids: string[]) {
 }
 
 export async function syncQueuedOperations() {
-  const operations = await getQueuedOperations();
+  const operations = (await getQueuedOperations()).sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   if (operations.length === 0) return { synced: 0 };
 
   await api('/api/sync', {

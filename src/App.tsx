@@ -94,6 +94,13 @@ const expenseCategories = ['Alimento', 'Vacunas', 'Medicamentos', 'Materia prima
 
 const dateToday = () => new Date().toISOString().slice(0, 10);
 
+function greeting() {
+  const hour = new Date().getHours();
+  if (hour < 12) return 'Buenos dias';
+  if (hour < 19) return 'Buenas tardes';
+  return 'Buenas noches';
+}
+
 const emptyCollection = (): CollectionPayload => ({
   collectionDate: dateToday(),
   pequeno: 0,
@@ -490,7 +497,7 @@ function HoyScreen({
               {user.name.slice(0, 1).toUpperCase()}
             </span>
             <div>
-              <p className="hoy-hello">Buenos dias</p>
+              <p className="hoy-hello">{greeting()}</p>
               <p className="hoy-name">{user.name}</p>
             </div>
           </div>
@@ -685,12 +692,12 @@ function CollectionPanel({
     try {
       await postCollection(form);
       onSaved('Inventario actualizado');
-      setForm(emptyCollection());
+      setForm({ ...emptyCollection(), galponId: form.galponId });
     } catch (error) {
       if (isNetworkError(error)) {
         await enqueueOperation({ type: 'collection', payload: form });
         onQueued();
-        setForm(emptyCollection());
+        setForm({ ...emptyCollection(), galponId: form.galponId });
         setMessage('Sin conexion: recoleccion guardada en este dispositivo.');
       } else {
         setMessage(error instanceof Error ? error.message : 'No se pudo guardar.');
@@ -924,12 +931,12 @@ function ExpensePanel({
     try {
       await postExpense(form);
       onSaved('Gasto registrado');
-      setForm(emptyExpense());
+      setForm({ ...emptyExpense(), galponId: form.galponId });
     } catch (error) {
       if (isNetworkError(error)) {
         await enqueueOperation({ type: 'expense', payload: form });
         onQueued();
-        setForm(emptyExpense());
+        setForm({ ...emptyExpense(), galponId: form.galponId });
         setMessage('Sin conexion: gasto guardado pendiente.');
       } else {
         setMessage(error instanceof Error ? error.message : 'No se pudo guardar el gasto.');
@@ -2045,7 +2052,12 @@ function NotificationsSheet({
       if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
   if (!open) return null;
@@ -2174,7 +2186,12 @@ function NotifSettingsSheet({
       if (event.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [open, onClose]);
 
   if (!open) return null;

@@ -45,6 +45,11 @@
   --radius-lg: 1.25rem;
   --shell-w: 30rem;
   --nav-h: 4.75rem;
+  /* Escala de apilamiento (de menor a mayor) */
+  --z-nav: 30;
+  --z-modal: 60;
+  --z-toast: 80;
+  --z-skip: 100;
 }
 
 * {
@@ -225,7 +230,7 @@ a:focus-visible {
   position: fixed;
   left: 1rem;
   top: 1rem;
-  z-index: 100;
+  z-index: var(--z-skip);
   border-radius: 999px;
   background: var(--ink);
   color: #fff;
@@ -1890,7 +1895,7 @@ button.settings-row:hover:not(:disabled) {
   left: 50%;
   transform: translateX(-50%);
   bottom: calc(var(--nav-h) + 1.25rem + env(safe-area-inset-bottom));
-  z-index: 40;
+  z-index: var(--z-toast);
   width: min(calc(var(--shell-w) - 2.25rem), calc(100% - 2.25rem));
   display: flex;
   align-items: center;
@@ -1947,7 +1952,7 @@ button.settings-row:hover:not(:disabled) {
   left: 50%;
   transform: translateX(-50%);
   bottom: calc(0.625rem + env(safe-area-inset-bottom));
-  z-index: 30;
+  z-index: var(--z-nav);
   width: min(calc(var(--shell-w) - 1.25rem), calc(100% - 1.25rem));
   display: grid;
   grid-auto-flow: column;
@@ -2242,7 +2247,7 @@ button.settings-row:hover:not(:disabled) {
 .notif-scrim {
   position: fixed;
   inset: 0;
-  z-index: 1000;
+  z-index: var(--z-modal);
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
