@@ -2146,17 +2146,45 @@ button.settings-row:hover:not(:disabled) {
   width: min(100%, var(--shell-w));
   min-height: 100dvh;
   margin-inline: auto;
-  background: var(--bg);
-  padding: calc(1.25rem + env(safe-area-inset-top)) 1.125rem 2rem;
+  background: var(--brand-deep);
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+}
+
+/* Cabecera de marca verde con el saludo del modo (login / recuperar / nueva). */
+.auth-head {
+  flex: none;
+  padding: calc(1.25rem + env(safe-area-inset-top)) 1.625rem 2.25rem;
+  background: linear-gradient(135deg, var(--brand) 0%, var(--brand-bright) 100%);
+  color: #fff;
 }
 
 .auth-top {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+}
+
+.auth-back {
+  width: 2.75rem;
+  height: 2.75rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 140ms ease, transform 120ms ease;
+}
+
+.auth-back:hover {
+  background: rgba(255, 255, 255, 0.26);
+}
+
+.auth-back:active {
+  transform: scale(0.94);
 }
 
 .auth-brand {
@@ -2166,28 +2194,39 @@ button.settings-row:hover:not(:disabled) {
   font-family: var(--font-mono);
   font-size: 1rem;
   font-weight: 700;
-  color: var(--brand-deep);
+  color: #fff;
 }
 
-.auth-card {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 1.5rem 1.25rem;
-}
-
-.auth-badge {
-  width: fit-content;
+.auth-title {
+  margin: 1.5rem 0 0.5rem;
+  font-family: var(--font-mono);
+  font-size: 1.625rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+  color: #fff;
+  text-wrap: balance;
 }
 
 .auth-lead {
   margin: 0;
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--ink-soft);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+/* Hoja blanca con el formulario: crece para llenar la pantalla (sin huecos). */
+.auth-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: -1.25rem;
+  background: var(--surface);
+  border-radius: 1.5rem 1.5rem 0 0;
+  padding: 1.75rem 1.25rem calc(2rem + env(safe-area-inset-bottom));
+  box-shadow: 0 -12px 30px -18px rgba(14, 27, 9, 0.4);
 }
 
 .auth-links {

@@ -366,28 +366,26 @@ function LoginScreen({ onLogin, onBack }: { onLogin: (user: User) => void; onBac
 
   return (
     <main className="auth">
-      <div className="auth-top">
-        <button type="button" className="btn btn-ghost btn-icon" aria-label="Volver" onClick={onBack}>
-          <ChevronRight size={20} className="flip" />
-        </button>
-        <span className="auth-brand">
-          <span className="welcome-logo" aria-hidden="true">
-            <Egg size={18} />
+      <header className="auth-head">
+        <div className="auth-top">
+          <button type="button" className="auth-back" aria-label="Volver" onClick={onBack}>
+            <ChevronRight size={20} className="flip" />
+          </button>
+          <span className="auth-brand">
+            <span className="welcome-logo" aria-hidden="true">
+              <Egg size={18} />
+            </span>
+            El Rancho
           </span>
-          El Rancho
-        </span>
-      </div>
-      <section className="auth-card" aria-labelledby="auth-title">
-        <span className="pill pill-online auth-badge">
-          <ShieldCheck size={14} /> PWA con modo offline
-        </span>
-        <h1 id="auth-title" className="screen-title">
+        </div>
+        <h1 id="auth-title" className="auth-title">
           {title}
         </h1>
         <p className="auth-lead">
           {mode === 'login' ? 'Usa tu correo y contrasena para continuar.' : 'El token de recuperacion vence en 30 minutos.'}
         </p>
-
+      </header>
+      <section className="auth-card" aria-labelledby="auth-title">
         <form onSubmit={submit} className="form-grid">
           {mode !== 'reset' && (
             <label className="field">
