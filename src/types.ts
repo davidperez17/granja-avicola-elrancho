@@ -54,7 +54,7 @@ export type SalePayload = {
   customer?: string;
   notes?: string;
   items: Array<{
-    productType: 'cajon' | 'oferta_grande';
+    productType: 'cajon' | 'oferta_grande' | 'carton';
     category: CategoryKey;
     quantity: number;
     unitPrice: number;
@@ -120,7 +120,7 @@ export type CollectionRecord = {
 };
 
 export type SaleItemRecord = {
-  product_type: 'cajon' | 'oferta_grande';
+  product_type: 'cajon' | 'oferta_grande' | 'carton';
   category: CategoryKey;
   quantity: number;
   eggs_per_unit: number;

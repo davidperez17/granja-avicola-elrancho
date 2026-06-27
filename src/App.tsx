@@ -5,6 +5,7 @@ import {
   ArrowRight,
   BarChart3,
   Bell,
+  Boxes,
   Check,
   ChevronRight,
   CircleDollarSign,
@@ -151,6 +152,18 @@ function formatMoney(value: number) {
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('es-GT').format(value || 0);
+}
+
+const CAJON_EGGS = 360;
+
+function eggsPerUnit(productType: SalePayload['items'][number]['productType']) {
+  if (productType === 'oferta_grande') return 90;
+  if (productType === 'carton') return 30;
+  return CAJON_EGGS;
+}
+
+function formatCajas(eggs: number) {
+  return new Intl.NumberFormat('es-GT', { maximumFractionDigits: 2 }).format((eggs || 0) / CAJON_EGGS);
 }
 
 function collectionProduction(collection: Record<string, number>) {
@@ -809,7 +822,7 @@ function SalePanel({
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const item = form.items[0];
-  const eggs = (item.productType === 'oferta_grande' ? 90 : 360) * item.quantity;
+  const eggs = eggsPerUnit(item.productType) * item.quantity;
   const total = item.quantity * item.unitPrice;
 
   function updateItem(next: Partial<SalePayload['items'][number]>) {
@@ -850,7 +863,8 @@ function SalePanel({
         onChange={(value) => updateItem({ productType: value })}
         options={[
           { value: 'cajon', label: 'Cajon · 360' },
-          { value: 'oferta_grande', label: 'Oferta · 90' }
+          { value: 'oferta_grande', label: 'Oferta · 90' },
+          { value: 'carton', label: 'Carton · 30' }
         ]}
       />
 
@@ -1162,6 +1176,9 @@ function InventarioScreen() {
         <p className="feature-banner-value number-text">
           {formatNumber(totalEggs)} <span className="feature-banner-unit">huevos</span>
         </p>
+        <p className="feature-banner-foot number-text">
+          ≈ {formatCajas(totalEggs)} cajas de {CAJON_EGGS} c/u
+        </p>
       </div>
 
       {message && (
@@ -1211,7 +1228,13 @@ function InventarioScreen() {
                       }
                     />
                   ) : (
-                    <span className="list-value number-text">{formatNumber(quantity)}</span>
+                    <span className="inv-value-col">
+                      <span className="list-value number-text">{formatNumber(quantity)}</span>
+                      <span className="inv-cajas">
+                        <Boxes size={12} aria-hidden="true" />
+                        {formatCajas(quantity)} {quantity === CAJON_EGGS ? 'caja' : 'cajas'}
+                      </span>
+                    </span>
                   )}
                 </div>
                 {!editing && (
@@ -2455,7 +2478,7 @@ function SaleEditor({
   }));
   const [saving, setSaving] = useState(false);
   const item = form.items[0];
-  const eggs = (item.productType === 'oferta_grande' ? 90 : 360) * item.quantity;
+  const eggs = eggsPerUnit(item.productType) * item.quantity;
   const total = item.quantity * item.unitPrice;
 
   function updateItem(next: Partial<SalePayload['items'][number]>) {
@@ -2486,7 +2509,8 @@ function SaleEditor({
           onChange={(value) => updateItem({ productType: value })}
           options={[
             { value: 'cajon', label: 'Cajon · 360' },
-            { value: 'oferta_grande', label: 'Oferta · 90' }
+            { value: 'oferta_grande', label: 'Oferta · 90' },
+            { value: 'carton', label: 'Carton · 30' }
           ]}
         />
         <ChipGroup

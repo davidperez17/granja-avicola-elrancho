@@ -1,6 +1,7 @@
 # Resumen del proyecto — El Rancho
 
 > Contexto para retomar el proyecto en cualquier chat nuevo. Última actualización: 2026-06-27.
+> Pendiente de deploy: correr `npm run migrate` para el ENUM `carton` antes de vender por cartón.
 
 ## Qué es
 
@@ -56,7 +57,7 @@ public/push-sw.js    # handlers push/notificationclick (cargado por el SW)
 (soft delete) en `daily_collections`, `sales` y `expenses`.
 
 Categorías de huevo: `pequeno, mediano, grande, extra_grande, jumbo`. Roles: `admin, trabajador`.
-Venta: `cajon` = 360 huevos, `oferta_grande` = 90.
+Venta: `cajon` = 360 huevos, `oferta_grande` = 90, `carton` = 30.
 
 ## Endpoints API (prefijo /api)
 
@@ -83,12 +84,15 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90.
    - **Login**: header verde de marca (back + wordmark + título del modo) + hoja blanca con el
      formulario que crece para llenar la pantalla.
 2. **Registrar** (control segmentado): Recolección (compacta, grid P/M/G/XG/J + total + rotos),
-   Venta y Gasto (estos dos solo admin). Selector de **galpón** en recolección y gasto.
+   Venta y Gasto (estos dos solo admin). Selector de **galpón** en recolección y gasto. La venta
+   tiene producto **Cajón (360) · Oferta (90) · Cartón (30)**; cartón/cajón con categoría libre,
+   oferta fuerza `grande`. Huevos/unidad centralizados en `eggsPerUnit()` (cliente y server).
 3. **Hoy** (admin): saludo **según la hora** + imagen hero, ganancia con **tendencia real vs ayer (%)**, stats
    (producción con **% postura**, ventas, gastos), inventario disponible y **"Últimos registros"**
    con nombre del trabajador, galpón y hora.
 4. **Inventario** (admin): existencia por categoría con barras; **ajuste manual** por categoría
-   (corrige errores; deja notificación de auditoría).
+   (corrige errores; deja notificación de auditoría). Vista rápida de **cajas** (chip `≈ X cajas`
+   por categoría, bajo el número, y total en el banner; 1 caja = 360 huevos, `formatCajas()`).
 5. **Reportes** (admin): selector 7/30/Año, **chart Recharts** (producción vs ventas vs ganancia),
    KPIs del periodo, desglose por tamaño y por categoría de venta, **exportar CSV**.
 6. **Historial** (trabajador): sus registros con hora.

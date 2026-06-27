@@ -51,7 +51,7 @@ const collectionSchema = z.object({
 });
 
 const saleItemSchema = z.object({
-  productType: z.enum(['cajon', 'oferta_grande']),
+  productType: z.enum(['cajon', 'oferta_grande', 'carton']),
   category: categorySchema,
   quantity: z.coerce.number().int().positive(),
   unitPrice: z.coerce.number().min(0)
@@ -73,8 +73,10 @@ const expenseSchema = z.object({
   notes: z.string().max(500).optional().default('')
 });
 
-function eggsPerUnit(productType: 'cajon' | 'oferta_grande') {
-  return productType === 'oferta_grande' ? 90 : 360;
+function eggsPerUnit(productType: 'cajon' | 'oferta_grande' | 'carton') {
+  if (productType === 'oferta_grande') return 90;
+  if (productType === 'carton') return 30;
+  return 360;
 }
 
 const LOW_INVENTORY_THRESHOLD = 360; // 1 cajon en huevos
