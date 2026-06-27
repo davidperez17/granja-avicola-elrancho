@@ -120,6 +120,10 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90.
 - **iOS**: el push exige tener la **PWA instalada** en pantalla de inicio (Safari no dispara
   `beforeinstallprompt`; se muestran instrucciones).
 - **Reportes** agregan al vuelo desde los registros (sin tabla de resumen); año = 12 meses por mes.
+- **Zona horaria Guatemala**: el server usa `GT_TODAY = (now() AT TIME ZONE 'America/Guatemala')::date`
+  (no `CURRENT_DATE`, que en Neon es UTC) y el cliente `dateToday()` también en `America/Guatemala`.
+  Así un registro nocturno (UTC−6) cae en el día correcto en "Hoy"/Reportes. Es a prueba de pooler
+  (no depende del timezone de sesión).
 - **No hay DELETE** de usuarios ni galpones (solo desactivar) para conservar historial/referencias.
 - La **DB ya tiene datos reales** del cliente (no borrar). En pruebas locales, siempre limpiar lo
   que se cree.
@@ -141,11 +145,6 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90.
 
 ## Pendientes / ideas futuras
 
-- **Zona horaria** (fix coordinado pendiente): `dateToday()` en cliente usa UTC
-  (`toISOString`) y el server filtra por `CURRENT_DATE` (UTC de Neon) — hoy son inconsistentes con
-  Guatemala (UTC−6) pero **alineados entre sí**. **No** cambiar solo el cliente a fecha local: un
-  registro nocturno se guardaría con día local pero "Hoy" lo buscaría en UTC y dejaría de salir. El
-  fix correcto es server+cliente a `America/Guatemala` a la vez.
 - "Precios y categorías" en Ajustes está como **"Próximamente"**.
 - Motivo opcional en el ajuste de inventario (auditoría más detallada).
 - Poda de notificaciones antiguas (>90 días).
