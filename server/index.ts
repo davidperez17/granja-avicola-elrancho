@@ -148,7 +148,12 @@ function formatQ(value: number) {
 
 function parseError(error: unknown) {
   if (error instanceof z.ZodError) return { message: 'Datos invalidos.', issues: error.issues };
-  if (error instanceof Error) return { message: error.message };
+  if (error instanceof Error) {
+    if (error.message.includes('inventory_quantity_check')) {
+      return { message: 'El inventario quedaria en negativo. Ajusta el inventario manualmente y reintenta.' };
+    }
+    return { message: error.message };
+  }
   return { message: 'Error inesperado.' };
 }
 
@@ -260,12 +265,13 @@ async function addExpense(input: z.infer<typeof expenseSchema>, userId: string) 
 type CollectionAmounts = { pequeno: number; mediano: number; grande: number; extra_grande: number; jumbo: number };
 
 // Aplica las cantidades de una recoleccion al inventario. sign=+1 suma, sign=-1 resta.
-// El CHECK (quantity >= 0) impide dejar el inventario negativo (ej. anular algo ya vendido).
+// Se hace clamp en 0 (GREATEST): como el inventario tambien se ajusta a mano, restar al
+// anular/editar nunca debe dejarlo negativo ni bloquear la operacion con el CHECK.
 async function applyCollectionToInventory(client: PoolClient, amounts: CollectionAmounts, sign: 1 | -1) {
   for (const cat of categories) {
     const amount = Number(amounts[cat] || 0) * sign;
     if (amount !== 0) {
-      await client.query('UPDATE inventory SET quantity = quantity + $1, updated_at = now() WHERE category = $2', [amount, cat]);
+      await client.query('UPDATE inventory SET quantity = GREATEST(quantity + $1, 0), updated_at = now() WHERE category = $2', [amount, cat]);
     }
   }
 }
