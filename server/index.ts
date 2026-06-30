@@ -1110,6 +1110,48 @@ app.delete('/api/sales/:id', requireAuth, requireRole('admin'), async (req, res)
   }
 });
 
+// Clientes: ventas agregadas por cliente (customer libre; NULL o vacio = "Sin cliente").
+app.get('/api/clientes', requireAuth, requireRole('admin'), async (_req, res) => {
+  const clientes = await query(
+    `SELECT NULLIF(trim(s.customer), '') AS customer,
+            count(*)::int sales,
+            COALESCE(sum(s.total), 0)::float total,
+            COALESCE(sum(e.eggs), 0)::int eggs,
+            max(s.sale_date)::text last_sale
+     FROM sales s
+     LEFT JOIN (
+       SELECT sale_id, sum(quantity * eggs_per_unit)::int eggs FROM sale_items GROUP BY sale_id
+     ) e ON e.sale_id = s.id
+     WHERE s.voided_at IS NULL
+     GROUP BY NULLIF(trim(s.customer), '')
+     ORDER BY total DESC, last_sale DESC`
+  );
+  res.json({ clientes });
+});
+
+app.get('/api/clientes/sales', requireAuth, requireRole('admin'), async (req, res) => {
+  const customer = typeof req.query.customer === 'string' ? req.query.customer.trim() : '';
+  const filter = customer ? `NULLIF(trim(s.customer), '') = $1` : `NULLIF(trim(s.customer), '') IS NULL`;
+  const params = customer ? [customer] : [];
+  const sales = await query(
+    `SELECT s.id, s.sale_date, s.customer, s.total, s.notes, s.created_at, u.name AS actor_name,
+            COALESCE(json_agg(json_build_object(
+              'product_type', si.product_type, 'category', si.category, 'quantity', si.quantity,
+              'eggs_per_unit', si.eggs_per_unit, 'unit_price', si.unit_price, 'line_total', si.line_total
+            ) ORDER BY si.id) FILTER (WHERE si.id IS NOT NULL), '[]') AS items,
+            COALESCE(sum(si.quantity * si.eggs_per_unit), 0)::int AS eggs
+     FROM sales s
+     LEFT JOIN users u ON u.id = s.created_by
+     LEFT JOIN sale_items si ON si.sale_id = s.id
+     WHERE s.voided_at IS NULL AND ${filter}
+     GROUP BY s.id, u.name
+     ORDER BY s.sale_date DESC, s.created_at DESC
+     LIMIT 200`,
+    params
+  );
+  res.json({ sales });
+});
+
 app.post('/api/expenses', requireAuth, requireRole('admin'), async (req, res) => {
   try {
     const input = expenseSchema.parse(req.body);

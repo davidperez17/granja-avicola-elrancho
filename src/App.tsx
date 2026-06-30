@@ -44,6 +44,8 @@ import {
   getDashboard,
   getGalpones,
   getInventory,
+  getClientes,
+  getClienteSales,
   getCollectionsAll,
   getExpensesAll,
   getGalponesOverview,
@@ -79,6 +81,7 @@ import type {
   AppNotification,
   BirdEventType,
   CategoryKey,
+  ClienteSummary,
   CollectionPayload,
   CollectionRecord,
   CreateUserPayload,
@@ -491,7 +494,8 @@ function HoyScreen({
   unread,
   galponesCount,
   onOpenNotifications,
-  onOpenGalpones
+  onOpenGalpones,
+  onOpenClientes
 }: {
   user: User;
   online: boolean;
@@ -499,6 +503,7 @@ function HoyScreen({
   galponesCount: number;
   onOpenNotifications: () => void;
   onOpenGalpones: () => void;
+  onOpenClientes: () => void;
 }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null);
   const [registros, setRegistros] = useState<RegistroItem[]>([]);
@@ -613,6 +618,17 @@ function HoyScreen({
           <span className="hoy-link-sub">
             {data ? `${galponesCount} ${galponesCount === 1 ? 'galpón' : 'galpones'} · ${formatNumber(data.birds)} aves` : 'Producción y aves por galpón'}
           </span>
+        </span>
+        <ChevronRight size={20} className="hoy-link-chevron" aria-hidden="true" />
+      </button>
+
+      <button type="button" className="hoy-link" onClick={onOpenClientes}>
+        <span className="hoy-link-icon" aria-hidden="true">
+          <Users size={20} />
+        </span>
+        <span className="hoy-link-main">
+          <span className="hoy-link-title">Clientes</span>
+          <span className="hoy-link-sub">Cuánto se vendió a cada cliente</span>
         </span>
         <ChevronRight size={20} className="hoy-link-chevron" aria-hidden="true" />
       </button>
@@ -2565,6 +2581,182 @@ function GalponDetail({
   );
 }
 
+const productLabel: Record<'cajon' | 'oferta_grande' | 'carton', string> = {
+  cajon: 'Cajón',
+  oferta_grande: 'Oferta',
+  carton: 'Cartón'
+};
+
+function ClientesScreen({ onBack }: { onBack: () => void }) {
+  const [list, setList] = useState<ClienteSummary[] | null>(null);
+  const [selected, setSelected] = useState<ClienteSummary | null>(null);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    getClientes()
+      .then((result) => {
+        setList(result.clientes);
+        setMessage('');
+      })
+      .catch((error) => setMessage(error instanceof Error ? error.message : 'No se pudieron cargar los clientes.'));
+  }, []);
+
+  if (selected) {
+    return <ClienteDetail cliente={selected} onBack={() => setSelected(null)} />;
+  }
+
+  return (
+    <section className="screen screen-pad">
+      <div className="subscreen-top">
+        <button type="button" className="btn btn-ghost btn-icon" aria-label="Volver a Hoy" onClick={onBack}>
+          <ChevronRight size={20} className="flip" />
+        </button>
+        <div>
+          <h1 className="screen-title">Clientes</h1>
+          <p className="screen-sub">Ventas por cliente</p>
+        </div>
+      </div>
+
+      {message && (
+        <p className="status-message status-message-danger" role="alert">
+          {message}
+        </p>
+      )}
+
+      <div className="stack">
+        {!list &&
+          [0, 1].map((index) => (
+            <div key={index} className="user-card">
+              <div className="user-card-top">
+                <Skeleton className="skeleton-icon" />
+                <Skeleton className="skeleton-line" />
+              </div>
+            </div>
+          ))}
+        {list && list.length === 0 && (
+          <div className="empty-card">
+            <span className="empty-card-icon" aria-hidden="true">
+              <Users size={28} strokeWidth={1.7} />
+            </span>
+            <p className="empty-card-title">Sin ventas</p>
+            <p className="empty-card-text">Cuando registres ventas aparecerán aquí agrupadas por cliente.</p>
+          </div>
+        )}
+        {list &&
+          list.map((cliente) => (
+            <button
+              key={cliente.customer ?? '__none__'}
+              type="button"
+              className="galpon-stat-row"
+              onClick={() => setSelected(cliente)}
+            >
+              <span className="user-avatar" aria-hidden="true">
+                <Users size={20} />
+              </span>
+              <span className="galpon-stat-main">
+                <span className="galpon-stat-name">{cliente.customer ?? 'Sin cliente'}</span>
+                <span className="galpon-stat-meta number-text">
+                  {formatNumber(cliente.sales)} {cliente.sales === 1 ? 'venta' : 'ventas'} · {formatNumber(cliente.eggs)} huevos · {showDate(cliente.last_sale)}
+                </span>
+              </span>
+              <span className="cliente-total number-text">{formatMoney(cliente.total)}</span>
+              <ChevronRight size={20} className="galpon-stat-chevron" aria-hidden="true" />
+            </button>
+          ))}
+      </div>
+    </section>
+  );
+}
+
+function ClienteDetail({ cliente, onBack }: { cliente: ClienteSummary; onBack: () => void }) {
+  const [sales, setSales] = useState<SaleRecord[] | null>(null);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    getClienteSales(cliente.customer)
+      .then((result) => {
+        setSales(result.sales);
+        setMessage('');
+      })
+      .catch((error) => setMessage(error instanceof Error ? error.message : 'No se pudieron cargar las ventas.'));
+  }, [cliente.customer]);
+
+  return (
+    <section className="screen screen-pad">
+      <div className="subscreen-top">
+        <button type="button" className="btn btn-ghost btn-icon" aria-label="Volver a clientes" onClick={onBack}>
+          <ChevronRight size={20} className="flip" />
+        </button>
+        <div>
+          <h1 className="screen-title">{cliente.customer ?? 'Sin cliente'}</h1>
+          <p className="screen-sub number-text">{formatMoney(cliente.total)} en total</p>
+        </div>
+      </div>
+
+      <div className="stack">
+        <div className="kv-row">
+          <span className="kv-label">Total vendido</span>
+          <span className="kv-value number-text kv-positive">{formatMoney(cliente.total)}</span>
+        </div>
+        <div className="kv-row">
+          <span className="kv-label">Ventas</span>
+          <span className="kv-value number-text">{formatNumber(cliente.sales)}</span>
+        </div>
+        <div className="kv-row">
+          <span className="kv-label">Huevos vendidos</span>
+          <span className="kv-value number-text">{formatNumber(cliente.eggs)}</span>
+        </div>
+      </div>
+
+      {message && (
+        <p className="status-message status-message-danger" role="alert">
+          {message}
+        </p>
+      )}
+
+      <div className="section-head">
+        <h2 className="section-title">Ventas</h2>
+      </div>
+      {!sales ? (
+        <div className="list">
+          {[0, 1].map((index) => (
+            <div key={index} className="list-row">
+              <Skeleton className="skeleton-icon" />
+              <Skeleton className="skeleton-line" />
+            </div>
+          ))}
+        </div>
+      ) : sales.length === 0 ? (
+        <p className="empty-inline">Sin ventas registradas.</p>
+      ) : (
+        <div className="list">
+          {sales.map((sale) => (
+            <div key={sale.id} className="coll-row">
+              <div className="coll-row-top">
+                <span className="coll-date">{showDate(sale.sale_date)}</span>
+                <span className="coll-eggs number-text">{formatMoney(Number(sale.total))}</span>
+              </div>
+              <div className="sale-lines">
+                {sale.items.map((item, index) => (
+                  <span key={index} className="sale-line">
+                    <span className="sale-line-label">
+                      <span className="number-text">{formatNumber(item.quantity)}×</span> {productLabel[item.product_type]} {categoryLabels[item.category]}
+                    </span>
+                    <span className="sale-line-total number-text">{formatMoney(Number(item.line_total))}</span>
+                  </span>
+                ))}
+              </div>
+              <span className="coll-actor">
+                {[`${formatNumber(sale.eggs)} huevos`, sale.actor_name, sale.notes].filter(Boolean).join(' · ')}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function NotificationsSheet({
   open,
   notifications,
@@ -3382,6 +3574,7 @@ type ViewKey =
   | 'usuarios'
   | 'galpones'
   | 'galpones-stats'
+  | 'clientes'
   | 'registros';
 
 type RegistrarDraft = {
@@ -3408,7 +3601,7 @@ type InstallPromptEvent = Event & {
 function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const isAdmin = user.role === 'admin';
   const nav = useMemo(() => NAV.filter((item) => (isAdmin ? !item.workerOnly : !item.adminOnly)), [isAdmin]);
-  const allowed: ViewKey[] = [...nav.map((item) => item.key), ...(isAdmin ? (['usuarios', 'galpones', 'galpones-stats', 'registros'] as ViewKey[]) : [])];
+  const allowed: ViewKey[] = [...nav.map((item) => item.key), ...(isAdmin ? (['usuarios', 'galpones', 'galpones-stats', 'clientes', 'registros'] as ViewKey[]) : [])];
 
   const readHashView = (): ViewKey => {
     const hash = window.location.hash.replace('#', '') as ViewKey;
@@ -3592,6 +3785,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             galponesCount={galpones.length}
             onOpenNotifications={openNotifications}
             onOpenGalpones={() => selectView('galpones-stats')}
+            onOpenClientes={() => selectView('clientes')}
           />
         )}
         {view === 'galpones-stats' && isAdmin && (
@@ -3601,6 +3795,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             onToast={(detail) => setToast({ title: 'Listo', detail })}
           />
         )}
+        {view === 'clientes' && isAdmin && <ClientesScreen onBack={() => selectView('hoy')} />}
         <RegistrarScreen
           user={user}
           isAdmin={isAdmin}
@@ -3687,7 +3882,7 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             aria-current={
               view === item.key ||
               (item.key === 'ajustes' && (view === 'usuarios' || view === 'galpones' || view === 'registros')) ||
-              (item.key === 'hoy' && view === 'galpones-stats')
+              (item.key === 'hoy' && (view === 'galpones-stats' || view === 'clientes'))
                 ? 'page'
                 : undefined
             }

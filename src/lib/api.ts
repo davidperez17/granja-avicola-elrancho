@@ -3,6 +3,7 @@ import type {
   AppNotification,
   CollectionPayload,
   CollectionRecord,
+  ClienteSummary,
   CreateUserPayload,
   ExpensePayload,
   ExpenseRecord,
@@ -138,6 +139,15 @@ export function voidBirdEvent(eventId: string) {
 
 export function getRegistros() {
   return api<{ registros: RegistroItem[] }>('/api/registros');
+}
+
+export function getClientes() {
+  return api<{ clientes: ClienteSummary[] }>('/api/clientes');
+}
+
+export function getClienteSales(customer: string | null) {
+  const qs = customer ? `?customer=${encodeURIComponent(customer)}` : '';
+  return api<{ sales: SaleRecord[] }>(`/api/clientes/sales${qs}`);
 }
 
 // Historial completo (admin)

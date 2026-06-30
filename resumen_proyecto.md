@@ -72,6 +72,9 @@ Movimientos de aves (`galpon_bird_events.type`): `ingreso, muerte, ajuste`; `del
 - **Dashboard/datos**: `GET /dashboard/today` (incluye `profitYesterday`, `birds`),
   `GET /inventory`, `PATCH /inventory/:category` (ajuste admin), `GET /reports?period=7|30|365`.
 - **Registros**: `GET /registros` (admin: todos con autor+galpón; trabajador: los suyos).
+- **Clientes**: `GET /clientes` (admin; ventas agregadas por cliente: total Q, nº ventas, huevos,
+  última fecha; `NULLIF(trim(customer),'')` agrupa, NULL/vacío = "Sin cliente"), `GET /clientes/sales?customer=`
+  (ventas de ese cliente con items; sin `customer` = sin cliente).
 - **Galpones**: `GET /galpones`, `POST /galpones`, `PATCH /galpones/:id` (admin; cambiar nº de aves
   a mano se registra como evento `ajuste`). `GET /galpones/overview` (lista con aves + huevos/postura
   de hoy), `GET /galpones/:id/history?period=7|30|365` (serie diaria huevos+rotos, eventos de aves,
@@ -133,6 +136,10 @@ Movimientos de aves (`galpon_bird_events.type`): `ingreso, muerte, ajuste`; `del
     `GET /galpones/:id/history` devuelve `series`, `events`, `collections` y `totals`. Registrar
     movimientos vive en Ajustes>Galpones; esta pantalla es de consulta + anulación de eventos.
     View `galpones-stats` (hash), entrada desde Hoy.
+14. **Clientes** (admin, pantalla propia desde card en **Hoy**): overview con lista de clientes
+    (total Q, nº ventas, huevos, última venta; ordenado por total) → detalle con KPIs (total vendido,
+    ventas, huevos) y **lista de ventas** del cliente (fecha, líneas producto×categoría con monto,
+    huevos, autor, notas; solo lectura). NULL/vacío = "Sin cliente". View `clientes` (hash).
 
 ## Variables de entorno (Vercel → Production)
 

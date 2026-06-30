@@ -88,6 +88,14 @@ export type GalponHistory = {
   totals: { eggs: number; rotos: number; netBirds: number };
 };
 
+export type ClienteSummary = {
+  customer: string | null; // null = "Sin cliente"
+  sales: number;
+  total: number;
+  eggs: number;
+  last_sale: string;
+};
+
 export type RegistroItem = {
   type: 'collection' | 'sale' | 'expense';
   created_at: string;

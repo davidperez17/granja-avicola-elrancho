@@ -2939,6 +2939,42 @@ button.settings-row:hover:not(:disabled) {
   color: var(--ink-mute);
 }
 
+/* Clientes */
+.cliente-total {
+  flex: none;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--brand);
+}
+
+.sale-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.sale-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.sale-line-label b,
+.sale-line-label .number-text {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sale-line-total {
+  flex: none;
+  font-weight: 600;
+  color: var(--ink-mute);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
