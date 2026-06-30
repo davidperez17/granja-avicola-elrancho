@@ -7,6 +7,8 @@ import type {
   ExpensePayload,
   ExpenseRecord,
   Galpon,
+  GalponHistory,
+  GalponOverview,
   RegistroItem,
   ReportData,
   Role,
@@ -116,6 +118,22 @@ export function createGalpon(payload: { name: string; birdCount: number }) {
 
 export function updateGalpon(id: string, changes: { name?: string; birdCount?: number; active?: boolean }) {
   return api<{ galpon: Galpon }>(`/api/galpones/${id}`, { method: 'PATCH', json: changes });
+}
+
+export function getGalponesOverview() {
+  return api<{ galpones: GalponOverview[] }>('/api/galpones/overview');
+}
+
+export function getGalponHistory(id: string, period: 7 | 30 | 365) {
+  return api<GalponHistory>(`/api/galpones/${id}/history?period=${period}`);
+}
+
+export function postBirdEvent(id: string, payload: { type: 'ingreso' | 'muerte'; quantity: number; reason?: string; date?: string }) {
+  return api<{ galpon: Galpon }>(`/api/galpones/${id}/birds`, { method: 'POST', json: payload });
+}
+
+export function voidBirdEvent(eventId: string) {
+  return api<{ ok: boolean }>(`/api/galpones/birds/${eventId}`, { method: 'DELETE' });
 }
 
 export function getRegistros() {

@@ -2663,6 +2663,282 @@ button.settings-row:hover:not(:disabled) {
   }
 }
 
+/* ----------------------------------------------------------------- galpones */
+
+/* Acceso a Galpones desde Hoy */
+.hoy-link {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+
+.hoy-link:hover {
+  border-color: var(--brand-bright);
+}
+
+.hoy-link:active {
+  transform: scale(0.99);
+}
+
+.hoy-link-icon {
+  width: 2.625rem;
+  height: 2.625rem;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 0.8125rem;
+  background: var(--color-mint-100);
+  color: var(--brand);
+}
+
+.hoy-link-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.hoy-link-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.hoy-link-sub {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-mute);
+}
+
+.hoy-link-chevron {
+  flex: none;
+  color: var(--ink-mute);
+}
+
+/* Botones de movimientos de aves en el card de galpon (Ajustes) */
+.galpon-bird-actions {
+  display: flex;
+  gap: 0.625rem;
+}
+
+.galpon-bird-actions .btn {
+  flex: 1;
+}
+
+.bird-sheet-current {
+  margin: 0;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
+.bird-sheet-current strong {
+  color: var(--ink);
+}
+
+/* Lista de galpones en la pantalla de estadisticas */
+.galpon-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.875rem 1rem;
+  cursor: pointer;
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+
+.galpon-stat-row:hover {
+  border-color: var(--brand-bright);
+}
+
+.galpon-stat-row:active {
+  transform: scale(0.99);
+}
+
+.galpon-stat-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1875rem;
+}
+
+.galpon-stat-name {
+  display: flex;
+  align-items: center;
+  gap: 0.4375rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.galpon-stat-meta {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--ink-mute);
+}
+
+.galpon-stat-chevron {
+  flex: none;
+  color: var(--ink-mute);
+}
+
+/* Ledger de movimientos de aves */
+.bird-event {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  padding: 0.625rem 0.75rem;
+}
+
+.bird-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  flex: none;
+  min-width: 3.25rem;
+  justify-content: center;
+  font-size: 0.9375rem;
+  font-weight: 700;
+  border-radius: 0.625rem;
+  padding: 0.375rem 0.5rem;
+}
+
+.bird-delta-up {
+  background: var(--color-mint-100);
+  color: var(--brand);
+}
+
+.bird-delta-down {
+  background: var(--color-danger-50);
+  color: var(--danger);
+}
+
+.bird-event-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bird-event-type {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.bird-event-meta {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-mute);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bird-event-void {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 0.625rem;
+  background: transparent;
+  color: var(--ink-mute);
+  cursor: pointer;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.bird-event-void:hover {
+  background: var(--color-danger-50);
+  color: var(--danger);
+}
+
+/* Filas de recolecciones por galpon */
+.coll-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 0.875rem;
+  padding: 0.75rem 0.875rem;
+}
+
+.coll-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.coll-date {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.coll-eggs {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  color: var(--brand);
+}
+
+.coll-cats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+}
+
+.coll-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3125rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  background: var(--color-mint-50);
+  border: 1px solid var(--border-soft);
+  border-radius: 0.5rem;
+  padding: 0.1875rem 0.4375rem;
+}
+
+.coll-cat b {
+  font-weight: 700;
+  color: var(--ink-mute);
+}
+
+.coll-cat-roto {
+  color: var(--warn-ink);
+  background: var(--warn-bg);
+  border-color: var(--warn-border);
+}
+
+.coll-cat-roto b {
+  color: var(--warn-icon);
+}
+
+.coll-actor {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--ink-mute);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

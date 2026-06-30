@@ -18,6 +18,7 @@ import {
   EyeOff,
   LineChart,
   LogOut,
+  Minus,
   PackageCheck,
   Pencil,
   Plus,
@@ -45,6 +46,8 @@ import {
   getInventory,
   getCollectionsAll,
   getExpensesAll,
+  getGalponesOverview,
+  getGalponHistory,
   getMe,
   getNotifications,
   getRegistros,
@@ -54,10 +57,12 @@ import {
   login,
   logout,
   markNotificationsRead,
+  postBirdEvent,
   postCollection,
   postExpense,
   postSale,
   resetPassword,
+  voidBirdEvent,
   updateCollection,
   updateExpense,
   updateGalpon,
@@ -72,6 +77,7 @@ import { getPushStatus, subscribeToPush, unsubscribeFromPush, type PushStatus } 
 import type {
   AdminUser,
   AppNotification,
+  BirdEventType,
   CategoryKey,
   CollectionPayload,
   CollectionRecord,
@@ -79,6 +85,8 @@ import type {
   ExpensePayload,
   ExpenseRecord,
   Galpon,
+  GalponHistory,
+  GalponOverview,
   RegistroItem,
   Role,
   SalePayload,
@@ -481,12 +489,16 @@ function HoyScreen({
   user,
   online,
   unread,
-  onOpenNotifications
+  galponesCount,
+  onOpenNotifications,
+  onOpenGalpones
 }: {
   user: User;
   online: boolean;
   unread: number;
+  galponesCount: number;
   onOpenNotifications: () => void;
+  onOpenGalpones: () => void;
 }) {
   const [data, setData] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null);
   const [registros, setRegistros] = useState<RegistroItem[]>([]);
@@ -591,6 +603,19 @@ function HoyScreen({
           {formatNumber(rotos)} huevos rotos hoy · merma
         </p>
       )}
+
+      <button type="button" className="hoy-link" onClick={onOpenGalpones}>
+        <span className="hoy-link-icon" aria-hidden="true">
+          <Warehouse size={20} />
+        </span>
+        <span className="hoy-link-main">
+          <span className="hoy-link-title">Galpones</span>
+          <span className="hoy-link-sub">
+            {data ? `${galponesCount} ${galponesCount === 1 ? 'galpón' : 'galpones'} · ${formatNumber(data.birds)} aves` : 'Producción y aves por galpón'}
+          </span>
+        </span>
+        <ChevronRight size={20} className="hoy-link-chevron" aria-hidden="true" />
+      </button>
 
       <div className="section-head">
         <h2 className="section-title">Inventario disponible</h2>
@@ -1876,11 +1901,13 @@ function GalponCard({
   galpon,
   busy,
   onSaveBirds,
+  onBirds,
   onToggleActive
 }: {
   galpon: Galpon;
   busy: boolean;
   onSaveBirds: (birdCount: number) => void;
+  onBirds: (type: 'ingreso' | 'muerte') => void;
   onToggleActive: () => void;
 }) {
   const [birds, setBirds] = useState(galpon.bird_count);
@@ -1914,6 +1941,16 @@ function GalponCard({
           Guardar
         </button>
       </div>
+      <div className="galpon-bird-actions">
+        <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => onBirds('ingreso')}>
+          <Plus size={16} />
+          Entran
+        </button>
+        <button type="button" className="btn btn-secondary btn-sm" disabled={busy || galpon.bird_count === 0} onClick={() => onBirds('muerte')}>
+          <Minus size={16} />
+          Bajas
+        </button>
+      </div>
       <button
         type="button"
         className={`user-action ${galpon.active ? 'user-action-danger' : ''}`}
@@ -1935,6 +1972,8 @@ function GalponesScreen({ onBack, onChanged, onToast }: { onBack: () => void; on
   const [formMessage, setFormMessage] = useState('');
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [birdSheet, setBirdSheet] = useState<{ galpon: Galpon; type: 'ingreso' | 'muerte' } | null>(null);
+  const [birdSaving, setBirdSaving] = useState(false);
 
   async function load() {
     try {
@@ -1942,6 +1981,22 @@ function GalponesScreen({ onBack, onChanged, onToast }: { onBack: () => void; on
       setMessage('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'No se pudieron cargar los galpones.');
+    }
+  }
+
+  async function submitBirds(quantity: number, reason: string) {
+    if (!birdSheet) return;
+    setBirdSaving(true);
+    try {
+      await postBirdEvent(birdSheet.galpon.id, { type: birdSheet.type, quantity, reason });
+      onToast(birdSheet.type === 'ingreso' ? 'Entrada registrada' : 'Baja registrada');
+      setBirdSheet(null);
+      await load();
+      onChanged();
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('No se pudo registrar el movimiento.');
+    } finally {
+      setBirdSaving(false);
     }
   }
 
@@ -2075,10 +2130,437 @@ function GalponesScreen({ onBack, onChanged, onToast }: { onBack: () => void; on
               galpon={galpon}
               busy={busyId === galpon.id}
               onSaveBirds={(birdCount) => patch(galpon, { birdCount })}
+              onBirds={(type) => setBirdSheet({ galpon, type })}
               onToggleActive={() => patch(galpon, { active: !galpon.active })}
             />
           ))}
       </div>
+
+      {birdSheet && (
+        <BirdEventSheet
+          galpon={birdSheet.galpon}
+          type={birdSheet.type}
+          busy={birdSaving}
+          onClose={() => setBirdSheet(null)}
+          onSubmit={submitBirds}
+        />
+      )}
+    </section>
+  );
+}
+
+function BirdEventSheet({
+  galpon,
+  type,
+  busy,
+  onClose,
+  onSubmit
+}: {
+  galpon: Galpon;
+  type: 'ingreso' | 'muerte';
+  busy: boolean;
+  onClose: () => void;
+  onSubmit: (quantity: number, reason: string) => Promise<void>;
+}) {
+  const [quantity, setQuantity] = useState(0);
+  const [reason, setReason] = useState('');
+  const [message, setMessage] = useState('');
+  const ingreso = type === 'ingreso';
+
+  async function submit() {
+    if (quantity < 1) {
+      setMessage('Indica una cantidad mayor a cero.');
+      return;
+    }
+    if (!ingreso && quantity > galpon.bird_count) {
+      setMessage(`Solo hay ${formatNumber(galpon.bird_count)} aves en este galpón.`);
+      return;
+    }
+    setMessage('');
+    try {
+      await onSubmit(quantity, reason.trim());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo registrar el movimiento.');
+    }
+  }
+
+  return (
+    <EditorSheet title={`${ingreso ? 'Entran aves' : 'Bajas'} · ${galpon.name}`} onClose={onClose}>
+      <p className="bird-sheet-current">
+        Aves actuales: <strong className="number-text">{formatNumber(galpon.bird_count)}</strong>
+      </p>
+      <label className="field">
+        <span className="field-label">{ingreso ? '¿Cuántas entran?' : '¿Cuántas murieron?'}</span>
+        <input
+          className="field-control number-text"
+          type="number"
+          min="1"
+          inputMode="numeric"
+          autoFocus
+          placeholder="0"
+          value={quantity === 0 ? '' : quantity}
+          onChange={(event) => setQuantity(Math.max(0, Math.floor(Number(event.target.value || 0))))}
+        />
+      </label>
+      <label className="field">
+        <span className="field-label">Motivo (opcional)</span>
+        <input
+          className="field-control"
+          maxLength={200}
+          placeholder={ingreso ? 'Compra, traslado…' : 'Enfermedad, calor…'}
+          value={reason}
+          onChange={(event) => setReason(event.target.value)}
+        />
+      </label>
+      {message && (
+        <p className="status-message status-message-danger" role="alert">
+          {message}
+        </p>
+      )}
+      <button
+        type="button"
+        className={`btn btn-block ${ingreso ? 'btn-primary' : 'btn-danger-solid'}`}
+        onClick={submit}
+        disabled={busy || quantity < 1}
+        aria-busy={busy}
+      >
+        {busy ? 'Guardando…' : ingreso ? 'Registrar entrada' : 'Registrar baja'}
+      </button>
+    </EditorSheet>
+  );
+}
+
+const GalponChart = lazy(() => import('./components/GalponChart'));
+
+function birdTypeLabel(type: BirdEventType) {
+  if (type === 'ingreso') return 'Entraron';
+  if (type === 'muerte') return 'Murieron';
+  return 'Ajuste';
+}
+
+function GalponStatsScreen({
+  onBack,
+  onChanged,
+  onToast
+}: {
+  onBack: () => void;
+  onChanged: () => void;
+  onToast: (detail: string) => void;
+}) {
+  const [list, setList] = useState<GalponOverview[] | null>(null);
+  const [selected, setSelected] = useState<GalponOverview | null>(null);
+  const [message, setMessage] = useState('');
+
+  async function loadList() {
+    try {
+      setList((await getGalponesOverview()).galpones);
+      setMessage('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudieron cargar los galpones.');
+    }
+  }
+
+  useEffect(() => {
+    loadList();
+  }, []);
+
+  if (selected) {
+    return (
+      <GalponDetail
+        galpon={selected}
+        onBack={() => setSelected(null)}
+        onChanged={() => {
+          loadList();
+          onChanged();
+        }}
+        onToast={onToast}
+      />
+    );
+  }
+
+  return (
+    <section className="screen screen-pad">
+      <div className="subscreen-top">
+        <button type="button" className="btn btn-ghost btn-icon" aria-label="Volver a Hoy" onClick={onBack}>
+          <ChevronRight size={20} className="flip" />
+        </button>
+        <div>
+          <h1 className="screen-title">Galpones</h1>
+          <p className="screen-sub">Producción y aves por galpón</p>
+        </div>
+      </div>
+
+      {message && (
+        <p className="status-message status-message-danger" role="alert">
+          {message}
+        </p>
+      )}
+
+      <div className="stack">
+        {!list &&
+          [0, 1].map((index) => (
+            <div key={index} className="user-card">
+              <div className="user-card-top">
+                <Skeleton className="skeleton-icon" />
+                <Skeleton className="skeleton-line" />
+              </div>
+            </div>
+          ))}
+        {list && list.length === 0 && (
+          <div className="empty-card">
+            <span className="empty-card-icon" aria-hidden="true">
+              <Warehouse size={28} strokeWidth={1.7} />
+            </span>
+            <p className="empty-card-title">Sin galpones</p>
+            <p className="empty-card-text">Crea un galpón en Ajustes para ver su historial.</p>
+          </div>
+        )}
+        {list &&
+          list.map((galpon) => {
+            const laying = galpon.bird_count > 0 ? Math.round((galpon.eggs_today / galpon.bird_count) * 100) : null;
+            return (
+              <button key={galpon.id} type="button" className="galpon-stat-row" onClick={() => setSelected(galpon)}>
+                <span className="user-avatar" aria-hidden="true">
+                  <Warehouse size={20} />
+                </span>
+                <span className="galpon-stat-main">
+                  <span className="galpon-stat-name">
+                    {galpon.name}
+                    {!galpon.active && <span className="user-badge user-badge-off">Inactivo</span>}
+                  </span>
+                  <span className="galpon-stat-meta number-text">
+                    {formatNumber(galpon.bird_count)} aves · {formatNumber(galpon.eggs_today)} huevos hoy
+                    {laying !== null ? ` · ${laying}% postura` : ''}
+                  </span>
+                </span>
+                <ChevronRight size={20} className="galpon-stat-chevron" aria-hidden="true" />
+              </button>
+            );
+          })}
+      </div>
+    </section>
+  );
+}
+
+function GalponDetail({
+  galpon,
+  onBack,
+  onChanged,
+  onToast
+}: {
+  galpon: GalponOverview;
+  onBack: () => void;
+  onChanged: () => void;
+  onToast: (detail: string) => void;
+}) {
+  const [period, setPeriod] = useState<7 | 30 | 365>(7);
+  const [data, setData] = useState<GalponHistory | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+  const [confirmVoid, setConfirmVoid] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const reducedMotion = useMemo(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches, []);
+
+  async function load() {
+    setLoading(true);
+    try {
+      setData(await getGalponHistory(galpon.id, period));
+      setMessage('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo cargar el historial.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period]);
+
+  async function doVoid(id: string) {
+    setBusy(true);
+    try {
+      await voidBirdEvent(id);
+      onToast('Movimiento anulado');
+      setConfirmVoid(null);
+      await load();
+      onChanged();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo anular el movimiento.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const series = data?.series ?? [];
+  const hasData = series.some((point) => point.eggs > 0 || point.rotos > 0);
+  const eggs = data?.totals.eggs ?? 0;
+  const rotos = data?.totals.rotos ?? 0;
+  const net = data?.totals.netBirds ?? 0;
+  const breakRate = eggs + rotos > 0 ? (rotos / (eggs + rotos)) * 100 : 0;
+  const birds = data?.bird_count ?? galpon.bird_count;
+
+  return (
+    <section className="screen screen-pad">
+      <div className="subscreen-top">
+        <button type="button" className="btn btn-ghost btn-icon" aria-label="Volver a galpones" onClick={onBack}>
+          <ChevronRight size={20} className="flip" />
+        </button>
+        <div>
+          <h1 className="screen-title">{galpon.name}</h1>
+          <p className="screen-sub number-text">{formatNumber(birds)} aves actuales</p>
+        </div>
+      </div>
+
+      <div className="chip-row" role="tablist" aria-label="Periodo">
+        {reportPeriods.map((option) => (
+          <button key={option.value} type="button" className="chip" aria-pressed={period === option.value} onClick={() => setPeriod(option.value)}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+
+      {message && (
+        <p className="status-message status-message-danger" role="alert">
+          {message}
+        </p>
+      )}
+
+      <div className="chart-card">
+        {loading ? (
+          <div className="chart-loading">
+            <Skeleton className="skeleton-chart" />
+          </div>
+        ) : hasData ? (
+          <Suspense fallback={<div className="chart-loading"><Skeleton className="skeleton-chart" /></div>}>
+            <GalponChart series={series} reducedMotion={reducedMotion} />
+          </Suspense>
+        ) : (
+          <div className="chart-empty-state">
+            <LineChart size={28} strokeWidth={1.7} />
+            <p>Sin recolecciones en este periodo.</p>
+          </div>
+        )}
+      </div>
+
+      <div className="stack">
+        <div className="kv-row">
+          <span className="kv-label">Producción</span>
+          <span className="kv-value number-text">{formatNumber(eggs)} huevos</span>
+        </div>
+        <div className="kv-row">
+          <span className="kv-label">Huevos rotos</span>
+          <span className="kv-value number-text">{formatNumber(rotos)}</span>
+        </div>
+        <div className="kv-row">
+          <span className="kv-label">Tasa de rotura</span>
+          <span className="kv-value number-text">{breakRate.toFixed(1)}%</span>
+        </div>
+        <div className="kv-row">
+          <span className="kv-label">Aves netas del periodo</span>
+          <span className={`kv-value number-text ${net < 0 ? 'kv-negative' : net > 0 ? 'kv-positive' : ''}`}>
+            {net > 0 ? '+' : ''}
+            {formatNumber(net)}
+          </span>
+        </div>
+      </div>
+
+      <div className="section-head">
+        <h2 className="section-title">Movimientos de aves</h2>
+      </div>
+
+      {confirmVoid && (
+        <div className="confirm-inline">
+          <p className="confirm-inline-text">¿Anular este movimiento? Las aves se devuelven al conteo.</p>
+          <div className="confirm-inline-actions">
+            <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => setConfirmVoid(null)}>
+              Cancelar
+            </button>
+            <button type="button" className="btn btn-danger-solid btn-sm" disabled={busy} aria-busy={busy} onClick={() => doVoid(confirmVoid)}>
+              Anular
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!data ? (
+        <div className="list">
+          {[0, 1].map((index) => (
+            <div key={index} className="list-row">
+              <Skeleton className="skeleton-icon" />
+              <Skeleton className="skeleton-line" />
+            </div>
+          ))}
+        </div>
+      ) : data.events.length === 0 ? (
+        <p className="empty-inline">Aún no hay movimientos de aves registrados.</p>
+      ) : (
+        <div className="list">
+          {data.events.map((event) => {
+            const up = event.delta > 0;
+            return (
+              <div key={event.id} className="bird-event">
+                <span className={`bird-delta ${up ? 'bird-delta-up' : 'bird-delta-down'}`}>
+                  {up ? <Plus size={14} /> : <Minus size={14} />}
+                  <span className="number-text">{formatNumber(Math.abs(event.delta))}</span>
+                </span>
+                <span className="bird-event-main">
+                  <span className="bird-event-type">{birdTypeLabel(event.type)}</span>
+                  <span className="bird-event-meta">
+                    {[showDate(event.event_date), event.reason, event.actor_name].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+                <button type="button" className="bird-event-void" aria-label="Anular movimiento" onClick={() => setConfirmVoid(event.id)}>
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      <div className="section-head">
+        <h2 className="section-title">Recolecciones</h2>
+      </div>
+      {!data ? (
+        <div className="list">
+          {[0, 1].map((index) => (
+            <div key={index} className="list-row">
+              <Skeleton className="skeleton-icon" />
+              <Skeleton className="skeleton-line" />
+            </div>
+          ))}
+        </div>
+      ) : data.collections.length === 0 ? (
+        <p className="empty-inline">Sin recolecciones en este periodo.</p>
+      ) : (
+        <div className="list">
+          {data.collections.map((rec) => (
+            <div key={rec.id} className="coll-row">
+              <div className="coll-row-top">
+                <span className="coll-date">{showDate(rec.collection_date)}</span>
+                <span className="coll-eggs number-text">{formatNumber(rec.eggs)} huevos</span>
+              </div>
+              <div className="coll-cats">
+                {eggColumns.map((col) => (
+                  <span key={col.key} className="coll-cat">
+                    <b>{col.letter}</b>
+                    <span className="number-text">{formatNumber(Number(rec[col.key] ?? 0))}</span>
+                  </span>
+                ))}
+                {rec.rotos > 0 && (
+                  <span className="coll-cat coll-cat-roto">
+                    <b>Rotos</b>
+                    <span className="number-text">{formatNumber(rec.rotos)}</span>
+                  </span>
+                )}
+              </div>
+              {rec.actor_name && <span className="coll-actor">{rec.actor_name} · {timeAgo(rec.created_at)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
@@ -2890,7 +3372,17 @@ function RegistrosScreen({
 
 /* ------------------------------------------------------------------- shell */
 
-type ViewKey = 'hoy' | 'registrar' | 'historial' | 'inventario' | 'reportes' | 'ajustes' | 'usuarios' | 'galpones' | 'registros';
+type ViewKey =
+  | 'hoy'
+  | 'registrar'
+  | 'historial'
+  | 'inventario'
+  | 'reportes'
+  | 'ajustes'
+  | 'usuarios'
+  | 'galpones'
+  | 'galpones-stats'
+  | 'registros';
 
 type RegistrarDraft = {
   seg: Seg;
@@ -2916,7 +3408,7 @@ type InstallPromptEvent = Event & {
 function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const isAdmin = user.role === 'admin';
   const nav = useMemo(() => NAV.filter((item) => (isAdmin ? !item.workerOnly : !item.adminOnly)), [isAdmin]);
-  const allowed: ViewKey[] = [...nav.map((item) => item.key), ...(isAdmin ? (['usuarios', 'galpones', 'registros'] as ViewKey[]) : [])];
+  const allowed: ViewKey[] = [...nav.map((item) => item.key), ...(isAdmin ? (['usuarios', 'galpones', 'galpones-stats', 'registros'] as ViewKey[]) : [])];
 
   const readHashView = (): ViewKey => {
     const hash = window.location.hash.replace('#', '') as ViewKey;
@@ -3093,7 +3585,21 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
       <main id="main" className="shell-main" tabIndex={-1}>
         <SyncBanner online={online} pending={pending} onSync={runSync} />
         {view === 'hoy' && isAdmin && (
-          <HoyScreen user={user} online={online} unread={unread} onOpenNotifications={openNotifications} />
+          <HoyScreen
+            user={user}
+            online={online}
+            unread={unread}
+            galponesCount={galpones.length}
+            onOpenNotifications={openNotifications}
+            onOpenGalpones={() => selectView('galpones-stats')}
+          />
+        )}
+        {view === 'galpones-stats' && isAdmin && (
+          <GalponStatsScreen
+            onBack={() => selectView('hoy')}
+            onChanged={loadGalpones}
+            onToast={(detail) => setToast({ title: 'Listo', detail })}
+          />
         )}
         <RegistrarScreen
           user={user}
@@ -3178,7 +3684,13 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             key={item.key}
             type="button"
             className="nav-item"
-            aria-current={view === item.key || (item.key === 'ajustes' && (view === 'usuarios' || view === 'galpones' || view === 'registros')) ? 'page' : undefined}
+            aria-current={
+              view === item.key ||
+              (item.key === 'ajustes' && (view === 'usuarios' || view === 'galpones' || view === 'registros')) ||
+              (item.key === 'hoy' && view === 'galpones-stats')
+                ? 'page'
+                : undefined
+            }
             onClick={() => selectView(item.key)}
           >
             {item.icon}

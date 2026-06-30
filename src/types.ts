@@ -40,6 +40,54 @@ export type Galpon = {
   active: boolean;
 };
 
+export type BirdEventType = 'ingreso' | 'muerte' | 'ajuste';
+
+export type BirdEvent = {
+  id: string;
+  event_date: string;
+  type: BirdEventType;
+  delta: number;
+  reason: string | null;
+  actor_name: string | null;
+  created_at: string;
+};
+
+export type GalponOverview = {
+  id: string;
+  name: string;
+  bird_count: number;
+  active: boolean;
+  eggs_today: number;
+  rotos_today: number;
+};
+
+export type GalponCollectionRecord = {
+  id: string;
+  collection_date: string;
+  pequeno: number;
+  mediano: number;
+  grande: number;
+  extra_grande: number;
+  jumbo: number;
+  rotos: number;
+  eggs: number;
+  actor_name: string | null;
+  created_at: string;
+};
+
+export type GalponHistory = {
+  id: string;
+  name: string;
+  bird_count: number;
+  active: boolean;
+  period: number;
+  granularity: 'day' | 'month';
+  series: Array<{ label: string; date: string; eggs: number; rotos: number }>;
+  events: BirdEvent[];
+  collections: GalponCollectionRecord[];
+  totals: { eggs: number; rotos: number; netBirds: number };
+};
+
 export type RegistroItem = {
   type: 'collection' | 'sale' | 'expense';
   created_at: string;

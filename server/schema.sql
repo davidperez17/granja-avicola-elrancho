@@ -140,6 +140,28 @@ CREATE TABLE IF NOT EXISTS galpones (
 ALTER TABLE daily_collections ADD COLUMN IF NOT EXISTS galpon_id uuid REFERENCES galpones(id);
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS galpon_id uuid REFERENCES galpones(id);
 
+-- Movimientos de aves por galpon. delta firmado: ingreso (+), muerte (-),
+-- ajuste (correccion manual, +/-). bird_count en galpones se deriva de estos
+-- eventos (cada uno ajusta bird_count en transaccion). voided_at = anulado.
+DO $$ BEGIN
+  CREATE TYPE bird_event_type AS ENUM ('ingreso', 'muerte', 'ajuste');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS galpon_bird_events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  galpon_id uuid NOT NULL REFERENCES galpones(id),
+  event_date date NOT NULL DEFAULT CURRENT_DATE,
+  type bird_event_type NOT NULL,
+  delta integer NOT NULL CHECK (delta <> 0),
+  reason text,
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  voided_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS galpon_bird_events_galpon_idx ON galpon_bird_events(galpon_id, event_date DESC);
+
 -- Soft delete (anular): NULL = activo. Los registros anulados quedan para
 -- auditoria pero no cuentan en totales, reportes ni inventario.
 ALTER TABLE daily_collections ADD COLUMN IF NOT EXISTS voided_at timestamptz;

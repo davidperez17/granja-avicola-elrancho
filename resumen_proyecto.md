@@ -1,7 +1,8 @@
 # Resumen del proyecto — El Rancho
 
-> Contexto para retomar el proyecto en cualquier chat nuevo. Última actualización: 2026-06-27.
-> Pendiente de deploy: correr `npm run migrate` para el ENUM `carton` antes de vender por cartón.
+> Contexto para retomar el proyecto en cualquier chat nuevo. Última actualización: 2026-06-29.
+> Pendiente de deploy: correr `npm run migrate` (ENUM `carton`, ENUM `bird_event_type` y
+> tabla `galpon_bird_events`) antes de usar venta por cartón y movimientos de aves.
 
 ## Qué es
 
@@ -53,11 +54,13 @@ public/push-sw.js    # handlers push/notificationclick (cargado por el SW)
 
 `users`, `password_reset_tokens`, `inventory` (por categoría), `daily_collections`, `sales`,
 `sale_items`, `expenses`, `settings`, `notifications`, `notification_reads`, `galpones`,
-`push_subscriptions`. Columna `galpon_id` en `daily_collections` y `expenses`. Columna `voided_at`
-(soft delete) en `daily_collections`, `sales` y `expenses`.
+`galpon_bird_events`, `push_subscriptions`. Columna `galpon_id` en `daily_collections` y `expenses`.
+Columna `voided_at` (soft delete) en `daily_collections`, `sales`, `expenses` y `galpon_bird_events`.
 
 Categorías de huevo: `pequeno, mediano, grande, extra_grande, jumbo`. Roles: `admin, trabajador`.
 Venta: `cajon` = 360 huevos, `oferta_grande` = 90, `carton` = 30.
+Movimientos de aves (`galpon_bird_events.type`): `ingreso, muerte, ajuste`; `delta` firmado ajusta
+`galpones.bird_count` en transacción (ingreso +, muerte −, ajuste = corrección manual por diferencia).
 
 ## Endpoints API (prefijo /api)
 
@@ -69,7 +72,10 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90, `carton` = 30.
 - **Dashboard/datos**: `GET /dashboard/today` (incluye `profitYesterday`, `birds`),
   `GET /inventory`, `PATCH /inventory/:category` (ajuste admin), `GET /reports?period=7|30|365`.
 - **Registros**: `GET /registros` (admin: todos con autor+galpón; trabajador: los suyos).
-- **Galpones**: `GET /galpones`, `POST /galpones`, `PATCH /galpones/:id` (admin).
+- **Galpones**: `GET /galpones`, `POST /galpones`, `PATCH /galpones/:id` (admin; cambiar nº de aves
+  a mano se registra como evento `ajuste`). `GET /galpones/overview` (lista con aves + huevos/postura
+  de hoy), `GET /galpones/:id/history?period=7|30|365` (serie diaria huevos+rotos, eventos de aves,
+  totales), `POST /galpones/:id/birds` (movimiento ingreso/muerte), `DELETE /galpones/birds/:eventId` (anula evento).
 - **Usuarios**: `GET /users`, `POST /users`, `PATCH /users/:id` (admin; sin DELETE, solo desactivar).
 - **Notificaciones**: `GET /notifications`, `POST /notifications/read`.
 - **Push**: `GET /push/public-key`, `POST /push/subscribe`, `POST /push/unsubscribe`.
@@ -99,7 +105,9 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90, `carton` = 30.
 5. **Reportes** (admin): selector 7/30/Año, **chart Recharts** (producción vs ventas vs ganancia),
    KPIs del periodo, desglose por tamaño y por categoría de venta, **exportar CSV**.
 6. **Historial** (trabajador): sus registros con hora.
-7. **Galpones** (admin, en Ajustes): nombre + nº de aves; usados para % de postura.
+7. **Galpones** (admin, en Ajustes): nombre + nº de aves; usados para % de postura. Cada card tiene
+   botones **Entran / Bajas** (bottom-sheet con cantidad + motivo) que registran movimientos de aves
+   y ajustan `bird_count` en transacción (muerte > aves disponibles se bloquea con mensaje).
 8. **Usuarios** (admin, en Ajustes): crear, cambiar rol, activar/desactivar (guardas anti-bloqueo:
    no puede auto-desactivarse ni quitarse admin).
 9. **Notificaciones in-app**: campana en Hoy con badge, polling cada 25s, bottom-sheet, tabla
@@ -116,6 +124,15 @@ Venta: `cajon` = 360 huevos, `oferta_grande` = 90, `carton` = 30.
     Editar/anular **ajusta el inventario por la diferencia** de forma transaccional (devuelve/descuenta
     huevos; el `CHECK quantity>=0` impide estados imposibles). Endpoints: `GET /collections|sales|expenses?all=true`,
     `PATCH` y `DELETE` (anula) de cada uno.
+13. **Galpones — historial** (admin, pantalla propia desde card en **Hoy**): overview con lista de
+    galpones (aves, huevos de hoy, % postura) → detalle por galpón con selector 7/30/Año, **chart
+    huevos vs rotos** (`GalponChart`, Recharts lazy), KPIs (producción, rotos, tasa de rotura, aves
+    netas del periodo), **ledger de movimientos de aves** (`+/−` con tipo, fecha, motivo, autor;
+    anular cada evento revierte `bird_count`) y **lista de recolecciones** del galpón en el periodo
+    (fecha, total, desglose P/M/G/XG/J, rotos, autor; solo lectura, editar/anular vive en Registros).
+    `GET /galpones/:id/history` devuelve `series`, `events`, `collections` y `totals`. Registrar
+    movimientos vive en Ajustes>Galpones; esta pantalla es de consulta + anulación de eventos.
+    View `galpones-stats` (hash), entrada desde Hoy.
 
 ## Variables de entorno (Vercel → Production)
 

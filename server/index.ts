@@ -570,6 +570,35 @@ const galponUpdateSchema = z
     message: 'Nada que actualizar.'
   });
 
+const birdEventSchema = z.object({
+  type: z.enum(['ingreso', 'muerte']),
+  quantity: z.coerce.number().int().positive(),
+  reason: z.string().max(200).optional().default(''),
+  date: dateSchema.optional()
+});
+
+const birdPeriods = [7, 30, 365] as const;
+
+// Registra un movimiento de aves y ajusta bird_count del galpon en la misma
+// transaccion. delta firmado dirige el ajuste; el CHECK (bird_count >= 0) y la
+// validacion previa impiden dejar el galpon en negativo.
+async function addBirdEvent(
+  client: PoolClient,
+  galponId: string,
+  type: 'ingreso' | 'muerte' | 'ajuste',
+  delta: number,
+  reason: string,
+  userId: string,
+  date: string
+) {
+  await client.query(
+    `INSERT INTO galpon_bird_events (galpon_id, event_date, type, delta, reason, created_by)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [galponId, date, type, delta, reason || null, userId]
+  );
+  await client.query('UPDATE galpones SET bird_count = bird_count + $1 WHERE id = $2', [delta, galponId]);
+}
+
 app.get('/api/galpones', requireAuth, async (req, res) => {
   const all = req.query.all === 'true' && req.user!.role === 'admin';
   res.json({
@@ -591,30 +620,241 @@ app.post('/api/galpones', requireAuth, requireRole('admin'), async (req, res) =>
 });
 
 app.patch('/api/galpones/:id', requireAuth, requireRole('admin'), async (req, res) => {
+  const client = await pool.connect();
   try {
     const id = z.string().uuid().parse(req.params.id);
     const input = galponUpdateSchema.parse(req.body);
+    await client.query('BEGIN');
+    const cur = await client.query<{ bird_count: number }>('SELECT bird_count FROM galpones WHERE id = $1 FOR UPDATE', [id]);
+    if (cur.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Galpon no encontrado.' });
+    }
+
+    // Fijar el numero de aves a mano se registra como evento 'ajuste' por la
+    // diferencia, asi el historial siempre reconcilia con bird_count.
+    if (input.birdCount !== undefined) {
+      const delta = input.birdCount - Number(cur.rows[0].bird_count);
+      if (delta !== 0) {
+        await addBirdEvent(client, id, 'ajuste', delta, 'Ajuste manual', req.user!.id, gtToday());
+      }
+    }
+
     const updates: string[] = [];
     const values: unknown[] = [];
     if (input.name !== undefined) {
       values.push(input.name);
       updates.push(`name = $${values.length}`);
     }
-    if (input.birdCount !== undefined) {
-      values.push(input.birdCount);
-      updates.push(`bird_count = $${values.length}`);
-    }
     if (input.active !== undefined) {
       values.push(input.active);
       updates.push(`active = $${values.length}`);
     }
-    values.push(id);
-    const galpon = await queryOne(
-      `UPDATE galpones SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING id, name, bird_count, active`,
-      values
+    let galpon;
+    if (updates.length > 0) {
+      values.push(id);
+      const result = await client.query(
+        `UPDATE galpones SET ${updates.join(', ')} WHERE id = $${values.length} RETURNING id, name, bird_count, active`,
+        values
+      );
+      galpon = result.rows[0];
+    } else {
+      const result = await client.query('SELECT id, name, bird_count, active FROM galpones WHERE id = $1', [id]);
+      galpon = result.rows[0];
+    }
+    await client.query('COMMIT');
+    res.json({ galpon });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(400).json(parseError(error));
+  } finally {
+    client.release();
+  }
+});
+
+// Movimiento de aves: entran (ingreso) o mueren (muerte).
+app.post('/api/galpones/:id/birds', requireAuth, requireRole('admin'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const input = birdEventSchema.parse(req.body);
+    await client.query('BEGIN');
+    const cur = await client.query<{ name: string; bird_count: number }>(
+      'SELECT name, bird_count FROM galpones WHERE id = $1 FOR UPDATE',
+      [id]
+    );
+    if (cur.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Galpon no encontrado.' });
+    }
+    const current = Number(cur.rows[0].bird_count);
+    const delta = input.type === 'ingreso' ? input.quantity : -input.quantity;
+    if (current + delta < 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ message: `No puedes dar de baja ${input.quantity} aves; solo hay ${current}.` });
+    }
+    await addBirdEvent(client, id, input.type, delta, input.reason, req.user!.id, input.date ?? gtToday());
+    const updated = await client.query('SELECT id, name, bird_count, active FROM galpones WHERE id = $1', [id]);
+    await client.query('COMMIT');
+    const verb = input.type === 'ingreso' ? 'sumo' : 'dio de baja';
+    await addNotification({
+      type: 'low_inventory',
+      title: `${cur.rows[0].name}: ${input.type === 'ingreso' ? '+' : '−'}${input.quantity} aves`,
+      body: `${req.user!.name} ${verb} ${input.quantity} aves · ${current} → ${current + delta}`,
+      actorName: req.user!.name
+    });
+    res.json({ galpon: updated.rows[0] });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(400).json(parseError(error));
+  } finally {
+    client.release();
+  }
+});
+
+// Anula un movimiento de aves y revierte bird_count (clamp en 0 por seguridad).
+app.delete('/api/galpones/birds/:eventId', requireAuth, requireRole('admin'), async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const eventId = z.string().uuid().parse(req.params.eventId);
+    await client.query('BEGIN');
+    const cur = await client.query<{ galpon_id: string; delta: number; voided_at: string | null }>(
+      'SELECT galpon_id, delta, voided_at FROM galpon_bird_events WHERE id = $1 FOR UPDATE',
+      [eventId]
+    );
+    if (cur.rowCount === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Movimiento no encontrado.' });
+    }
+    if (cur.rows[0].voided_at) {
+      await client.query('ROLLBACK');
+      return res.json({ ok: true });
+    }
+    await client.query('UPDATE galpones SET bird_count = GREATEST(bird_count - $1, 0) WHERE id = $2', [
+      Number(cur.rows[0].delta),
+      cur.rows[0].galpon_id
+    ]);
+    await client.query('UPDATE galpon_bird_events SET voided_at = now() WHERE id = $1', [eventId]);
+    await client.query('COMMIT');
+    res.json({ ok: true });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    res.status(400).json(parseError(error));
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/galpones/overview', requireAuth, requireRole('admin'), async (_req, res) => {
+  const galpones = await query(
+    `SELECT g.id, g.name, g.bird_count, g.active,
+            COALESCE(t.eggs, 0)::int eggs_today, COALESCE(t.rotos, 0)::int rotos_today
+     FROM galpones g
+     LEFT JOIN (
+       SELECT galpon_id,
+              sum(pequeno + mediano + grande + extra_grande + jumbo)::int eggs,
+              sum(rotos)::int rotos
+       FROM daily_collections
+       WHERE collection_date = ${GT_TODAY} AND voided_at IS NULL
+       GROUP BY galpon_id
+     ) t ON t.galpon_id = g.id
+     ORDER BY g.active DESC, g.name ASC`
+  );
+  res.json({ galpones });
+});
+
+app.get('/api/galpones/:id/history', requireAuth, requireRole('admin'), async (req, res) => {
+  try {
+    const id = z.string().uuid().parse(req.params.id);
+    const period = z.coerce.number().int().refine((value) => birdPeriods.includes(value as 7 | 30 | 365), 'Periodo invalido.').parse(req.query.period ?? 7);
+    const granularity = period === 365 ? 'month' : 'day';
+    const eggsExpr = 'pequeno + mediano + grande + extra_grande + jumbo';
+
+    const galpon = await queryOne<{ id: string; name: string; bird_count: number; active: boolean }>(
+      'SELECT id, name, bird_count, active FROM galpones WHERE id = $1',
+      [id]
     );
     if (!galpon) return res.status(404).json({ message: 'Galpon no encontrado.' });
-    res.json({ galpon });
+
+    let series;
+    if (granularity === 'day') {
+      series = await query(
+        `WITH days AS (
+           SELECT generate_series(${GT_TODAY} - ($1::int - 1), ${GT_TODAY}, INTERVAL '1 day')::date AS d
+         ),
+         col AS (
+           SELECT collection_date d, sum(${eggsExpr})::int eggs, sum(rotos)::int rotos
+           FROM daily_collections
+           WHERE galpon_id = $2 AND collection_date > ${GT_TODAY} - $1::int AND voided_at IS NULL
+           GROUP BY collection_date
+         )
+         SELECT to_char(days.d, 'DD/MM') label, days.d::text date,
+                COALESCE(col.eggs, 0)::int eggs, COALESCE(col.rotos, 0)::int rotos
+         FROM days LEFT JOIN col ON col.d = days.d
+         ORDER BY days.d`,
+        [period, id]
+      );
+    } else {
+      series = await query(
+        `WITH months AS (
+           SELECT generate_series(date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months', date_trunc('month', ${GT_TODAY}), INTERVAL '1 month')::date AS d
+         ),
+         col AS (
+           SELECT date_trunc('month', collection_date)::date d, sum(${eggsExpr})::int eggs, sum(rotos)::int rotos
+           FROM daily_collections
+           WHERE galpon_id = $1 AND collection_date >= date_trunc('month', ${GT_TODAY}) - INTERVAL '11 months' AND voided_at IS NULL
+           GROUP BY 1
+         )
+         SELECT to_char(months.d, 'Mon') label, months.d::text date,
+                COALESCE(col.eggs, 0)::int eggs, COALESCE(col.rotos, 0)::int rotos
+         FROM months LEFT JOIN col ON col.d = months.d
+         ORDER BY months.d`,
+        [id]
+      );
+    }
+
+    const since = `${GT_TODAY} - ${period}::int`;
+    const [totals, events, collections] = await Promise.all([
+      queryOne(
+        `SELECT COALESCE(sum(${eggsExpr}), 0)::int eggs, COALESCE(sum(rotos), 0)::int rotos
+         FROM daily_collections WHERE galpon_id = $1 AND collection_date > ${since} AND voided_at IS NULL`,
+        [id]
+      ),
+      query(
+        `SELECT e.id, e.event_date, e.type, e.delta, e.reason, e.created_at, u.name AS actor_name
+         FROM galpon_bird_events e
+         LEFT JOIN users u ON u.id = e.created_by
+         WHERE e.galpon_id = $1 AND e.voided_at IS NULL
+         ORDER BY e.event_date DESC, e.created_at DESC
+         LIMIT 100`,
+        [id]
+      ),
+      query(
+        `SELECT dc.id, dc.collection_date, dc.pequeno, dc.mediano, dc.grande, dc.extra_grande, dc.jumbo,
+                dc.rotos, (${eggsExpr})::int eggs, dc.created_at, u.name AS actor_name
+         FROM daily_collections dc
+         LEFT JOIN users u ON u.id = dc.created_by
+         WHERE dc.galpon_id = $1 AND dc.collection_date > ${since} AND dc.voided_at IS NULL
+         ORDER BY dc.collection_date DESC, dc.created_at DESC
+         LIMIT 100`,
+        [id]
+      )
+    ]);
+    const netBirds = await queryOne<{ net: number }>(
+      `SELECT COALESCE(sum(delta), 0)::int net FROM galpon_bird_events
+       WHERE galpon_id = $1 AND event_date > ${since} AND voided_at IS NULL`,
+      [id]
+    );
+
+    res.json({
+      ...galpon,
+      period,
+      granularity,
+      series,
+      events,
+      collections,
+      totals: { eggs: Number(totals?.eggs || 0), rotos: Number(totals?.rotos || 0), netBirds: Number(netBirds?.net || 0) }
+    });
   } catch (error) {
     res.status(400).json(parseError(error));
   }
