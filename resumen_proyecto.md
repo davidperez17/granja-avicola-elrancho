@@ -1,9 +1,9 @@
 # Resumen del proyecto — El Rancho
 
-> Contexto para retomar el proyecto en cualquier chat nuevo. Última actualización: 2026-06-29.
-> Pendiente de deploy: correr `npm run migrate` (tablas `app_updates` y `app_update_reads` para
-> novedades; antes ya: ENUM `bird_event_type` + tabla `galpon_bird_events`). Configurar `DEV_EMAIL`
-> en Vercel = tu correo dev (única cuenta que publica novedades).
+> Contexto para retomar el proyecto en cualquier chat nuevo. Última actualización: 2026-06-30.
+> Pendiente de deploy: 1) `npm run migrate` (tablas `app_updates` y `app_update_reads` de novedades;
+> antes ya: ENUM `bird_event_type` + tabla `galpon_bird_events`). 2) `npm run seed-updates` (siembra el
+> changelog inicial). 3) Configurar `DEV_EMAIL` en Vercel = tu correo dev (única cuenta que publica novedades).
 
 ## Qué es
 
@@ -37,7 +37,8 @@ src/
   lib/api.ts         # cliente fetch de la API
   lib/offline.ts     # cola IndexedDB + sync
   lib/push.ts        # suscripción Web Push, estado, instalar
-  components/ReportChart.tsx  # chart Recharts (import dinámico)
+  components/ReportChart.tsx  # chart Recharts reportes (import dinámico)
+  components/GalponChart.tsx  # chart Recharts huevos vs rotos por galpón (lazy)
 server/
   index.ts           # API Express (todos los endpoints)
   db.ts              # pool pg
@@ -45,6 +46,7 @@ server/
   schema.sql         # esquema (idempotente)
   migrate.ts         # aplica schema.sql  (npm run migrate)
   create-admin.ts    # crea admin desde env (npm run create-admin)
+  seed-updates.ts    # siembra changelog inicial (npm run seed-updates)
 api/index.ts         # entrada serverless Vercel (reexporta app)
 vercel.json          # rewrites /api/* -> función
 public/brand/        # logo.svg, hero.jpg (imagen del hero de Hoy)
@@ -154,7 +156,8 @@ Movimientos de aves (`galpon_bird_events.type`): `ingreso, muerte, ajuste`; `del
 ## Variables de entorno (Vercel → Production)
 
 `DATABASE_URL` (Neon), `JWT_SECRET`, `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`
-(mailto). En local además `APP_ORIGIN`, `PORT`, `ADMIN_EMAIL/PASSWORD/NAME` (para `create-admin`).
+(mailto), `DEV_EMAIL` (correo dev: única cuenta que ve "Publicar novedad"; sin él nadie publica).
+En local además `APP_ORIGIN`, `PORT`, `ADMIN_EMAIL/PASSWORD/NAME` (para `create-admin`).
 `.env` está en `.gitignore` (nunca se commitea); ver `.env.example`.
 
 ## Scripts
