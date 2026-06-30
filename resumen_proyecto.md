@@ -160,6 +160,7 @@ Movimientos de aves (`galpon_bird_events.type`): `ingreso, muerte, ajuste`; `del
 ## Scripts
 
 `npm run dev` (api+web), `npm run build` (tsc + vite), `npm run migrate`, `npm run create-admin`,
+`npm run seed-updates` (siembra el changelog inicial en `app_updates`, idempotente por título, sin push),
 `npm start` (producción local).
 
 ## Decisiones y restricciones clave

@@ -11,7 +11,8 @@
     "preview": "vite preview --host 0.0.0.0",
     "start": "NODE_ENV=production tsx server/index.ts",
     "migrate": "tsx server/migrate.ts",
-    "create-admin": "tsx server/create-admin.ts"
+    "create-admin": "tsx server/create-admin.ts",
+    "seed-updates": "tsx server/seed-updates.ts"
   },
   "keywords": [],
   "author": "",
