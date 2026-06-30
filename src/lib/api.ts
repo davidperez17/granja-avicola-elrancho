@@ -1,6 +1,7 @@
 import type {
   AdminUser,
   AppNotification,
+  AppUpdate,
   CollectionPayload,
   CollectionRecord,
   ClienteSummary,
@@ -194,4 +195,16 @@ export function getNotifications() {
 
 export function markNotificationsRead() {
   return api<{ ok: boolean }>('/api/notifications/read', { method: 'POST' });
+}
+
+export function getUpdates() {
+  return api<{ updates: AppUpdate[]; unreadCount: number; canPublish: boolean }>('/api/updates');
+}
+
+export function markUpdatesRead() {
+  return api<{ ok: boolean }>('/api/updates/read', { method: 'POST' });
+}
+
+export function publishUpdate(payload: { title: string; body: string }) {
+  return api<{ update: AppUpdate }>('/api/updates', { method: 'POST', json: payload });
 }

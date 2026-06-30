@@ -1,8 +1,9 @@
 # Resumen del proyecto — El Rancho
 
 > Contexto para retomar el proyecto en cualquier chat nuevo. Última actualización: 2026-06-29.
-> Pendiente de deploy: correr `npm run migrate` (ENUM `carton`, ENUM `bird_event_type` y
-> tabla `galpon_bird_events`) antes de usar venta por cartón y movimientos de aves.
+> Pendiente de deploy: correr `npm run migrate` (tablas `app_updates` y `app_update_reads` para
+> novedades; antes ya: ENUM `bird_event_type` + tabla `galpon_bird_events`). Configurar `DEV_EMAIL`
+> en Vercel = tu correo dev (única cuenta que publica novedades).
 
 ## Qué es
 
@@ -53,7 +54,8 @@ public/push-sw.js    # handlers push/notificationclick (cargado por el SW)
 ## Base de datos (tablas)
 
 `users`, `password_reset_tokens`, `inventory` (por categoría), `daily_collections`, `sales`,
-`sale_items`, `expenses`, `settings`, `notifications`, `notification_reads`, `galpones`,
+`sale_items`, `expenses`, `settings`, `notifications`, `notification_reads`, `app_updates`,
+`app_update_reads`, `galpones`,
 `galpon_bird_events`, `push_subscriptions`. Columna `galpon_id` en `daily_collections` y `expenses`.
 Columna `voided_at` (soft delete) en `daily_collections`, `sales`, `expenses` y `galpon_bird_events`.
 
@@ -81,6 +83,8 @@ Movimientos de aves (`galpon_bird_events.type`): `ingreso, muerte, ajuste`; `del
   totales), `POST /galpones/:id/birds` (movimiento ingreso/muerte), `DELETE /galpones/birds/:eventId` (anula evento).
 - **Usuarios**: `GET /users`, `POST /users`, `PATCH /users/:id` (admin; sin DELETE, solo desactivar).
 - **Notificaciones**: `GET /notifications`, `POST /notifications/read`.
+- **Novedades (changelog)**: `GET /updates` (admin; lista + `unreadCount` + `canPublish`), `POST /updates/read`,
+  `POST /updates` (solo dev: inserta novedad y manda push a admins). Canal separado de la campana.
 - **Push**: `GET /push/public-key`, `POST /push/subscribe`, `POST /push/unsubscribe`.
 
 ## Funcionalidades implementadas
@@ -140,6 +144,12 @@ Movimientos de aves (`galpon_bird_events.type`): `ingreso, muerte, ajuste`; `del
     (total Q, nº ventas, huevos, última venta; ordenado por total) → detalle con KPIs (total vendido,
     ventas, huevos) y **lista de ventas** del cliente (fecha, líneas producto×categoría con monto,
     huevos, autor, notas; solo lectura). NULL/vacío = "Sin cliente". View `clientes` (hash).
+15. **Novedades de la app** (admin): ícono **estrella** junto a la campana en Hoy (badge propio de
+    no leídas) → `UpdatesSheet` (changelog: título, descripción, fecha). Canal separado de las
+    notificaciones operativas (tablas `app_updates` + `app_update_reads`, polling 25s junto a la
+    campana). **Publicar** solo lo ve la cuenta dev (`DEV_EMAIL`): form título+descripción en el
+    sheet → inserta novedad y manda **Web Push** a los admins suscritos. El cliente solo lee.
+    `isDev`/`canPublish` vienen del server (login, `/auth/me`, `/updates`).
 
 ## Variables de entorno (Vercel → Production)
 

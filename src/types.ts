@@ -5,6 +5,14 @@ export type User = {
   email: string;
   name: string;
   role: Role;
+  isDev?: boolean;
+};
+
+export type AppUpdate = {
+  id: string;
+  title: string;
+  body: string | null;
+  created_at: string;
 };
 
 export type AdminUser = User & {

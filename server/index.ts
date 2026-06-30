@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import bcrypt from 'bcryptjs';
 import cookieParser from 'cookie-parser';
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import webpush from 'web-push';
 import type { PoolClient } from 'pg';
 import { z } from 'zod';
@@ -20,6 +20,16 @@ const vapidPrivate = process.env.VAPID_PRIVATE_KEY || '';
 const pushEnabled = Boolean(vapidPublic && vapidPrivate);
 if (pushEnabled) {
   webpush.setVapidDetails(process.env.VAPID_SUBJECT || 'mailto:admin@elrancho.app', vapidPublic, vapidPrivate);
+}
+
+// Correo del desarrollador autorizado a publicar novedades de la app. Solo esa
+// cuenta ve el boton de publicar; el cliente solo lee. Sin DEV_EMAIL nadie publica.
+const devEmail = (process.env.DEV_EMAIL || '').toLowerCase();
+const isDevUser = (email?: string) => Boolean(devEmail) && email?.toLowerCase() === devEmail;
+
+function requireDev(req: Request, res: Response, next: NextFunction) {
+  if (!isDevUser(req.user?.email)) return res.status(403).json({ message: 'Solo el desarrollador puede publicar novedades.' });
+  next();
 }
 
 app.use(express.json({ limit: '1mb' }));
@@ -376,7 +386,7 @@ app.post('/api/auth/login', async (req, res) => {
 
     const sessionUser = { id: user.id, email: user.email, name: user.name, role: user.role };
     setSessionCookie(res, signSession(sessionUser));
-    res.json({ user: sessionUser });
+    res.json({ user: { ...sessionUser, isDev: isDevUser(user.email) } });
   } catch (error) {
     res.status(400).json(parseError(error));
   }
@@ -387,7 +397,7 @@ app.post('/api/auth/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
-app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: req.user }));
+app.get('/api/auth/me', requireAuth, (req, res) => res.json({ user: { ...req.user, isDev: isDevUser(req.user?.email) } }));
 
 app.post('/api/auth/forgot-password', async (req, res) => {
   try {
@@ -1300,6 +1310,42 @@ app.post('/api/notifications/read', requireAuth, requireRole('admin'), async (re
     [req.user!.id]
   );
   res.json({ ok: true });
+});
+
+// Novedades de la app (changelog). Canal aparte de la campana; lo publica el dev.
+app.get('/api/updates', requireAuth, requireRole('admin'), async (req, res) => {
+  const [updates, unread] = await Promise.all([
+    query('SELECT id, title, body, created_at FROM app_updates ORDER BY created_at DESC LIMIT 50'),
+    queryOne<{ count: number }>(
+      `SELECT count(*)::int count FROM app_updates u
+       WHERE u.created_at > COALESCE((SELECT last_seen_at FROM app_update_reads WHERE user_id = $1), 'epoch')`,
+      [req.user!.id]
+    )
+  ]);
+  res.json({ updates, unreadCount: unread?.count ?? 0, canPublish: isDevUser(req.user?.email) });
+});
+
+app.post('/api/updates/read', requireAuth, requireRole('admin'), async (req, res) => {
+  await query(
+    `INSERT INTO app_update_reads (user_id, last_seen_at) VALUES ($1, now())
+     ON CONFLICT (user_id) DO UPDATE SET last_seen_at = now()`,
+    [req.user!.id]
+  );
+  res.json({ ok: true });
+});
+
+app.post('/api/updates', requireAuth, requireDev, async (req, res) => {
+  try {
+    const input = z.object({ title: z.string().min(1).max(120), body: z.string().max(1000).optional().default('') }).parse(req.body);
+    const update = await queryOne(
+      'INSERT INTO app_updates (title, body, created_by) VALUES ($1, $2, $3) RETURNING id, title, body, created_at',
+      [input.title, input.body || null, req.user!.id]
+    );
+    await sendPushToAdmins(`✨ ${input.title}`, input.body || 'Nueva actualización disponible.');
+    res.json({ update });
+  } catch (error) {
+    res.status(400).json(parseError(error));
+  }
 });
 
 app.get('/api/push/public-key', requireAuth, (_req, res) => {

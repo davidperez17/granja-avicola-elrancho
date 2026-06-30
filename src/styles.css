@@ -2975,6 +2975,36 @@ button.settings-row:hover:not(:disabled) {
   color: var(--ink-mute);
 }
 
+/* Novedades de la app (estrella) */
+.hoy-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bell-badge-star {
+  background: #f59e0b;
+}
+
+.notif-icon-star {
+  background: #fff4d6;
+  color: #b45309;
+}
+
+.notif-row-update {
+  border-color: var(--border-soft);
+}
+
+.update-publish {
+  margin-bottom: 0.25rem;
+}
+
+.update-textarea {
+  resize: vertical;
+  min-height: 3.5rem;
+  line-height: 1.4;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

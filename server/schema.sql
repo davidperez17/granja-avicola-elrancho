@@ -168,6 +168,23 @@ ALTER TABLE daily_collections ADD COLUMN IF NOT EXISTS voided_at timestamptz;
 ALTER TABLE sales ADD COLUMN IF NOT EXISTS voided_at timestamptz;
 ALTER TABLE expenses ADD COLUMN IF NOT EXISTS voided_at timestamptz;
 
+-- Novedades de la app (changelog). Canal separado de notifications: lo publica
+-- el desarrollador (DEV_EMAIL) y el cliente solo lo lee. Badge propio via reads.
+CREATE TABLE IF NOT EXISTS app_updates (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title text NOT NULL,
+  body text,
+  created_by uuid REFERENCES users(id),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS app_updates_created_idx ON app_updates(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS app_update_reads (
+  user_id uuid PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  last_seen_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE TABLE IF NOT EXISTS push_subscriptions (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,

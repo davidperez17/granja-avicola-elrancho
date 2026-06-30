@@ -26,6 +26,7 @@ import {
   RotateCcw,
   Settings,
   ShieldCheck,
+  Star,
   Tag,
   Trash2,
   TrendingDown,
@@ -58,8 +59,11 @@ import {
   getUsers,
   login,
   logout,
+  getUpdates,
   markNotificationsRead,
+  markUpdatesRead,
   postBirdEvent,
+  publishUpdate,
   postCollection,
   postExpense,
   postSale,
@@ -79,6 +83,7 @@ import { getPushStatus, subscribeToPush, unsubscribeFromPush, type PushStatus } 
 import type {
   AdminUser,
   AppNotification,
+  AppUpdate,
   BirdEventType,
   CategoryKey,
   ClienteSummary,
@@ -493,7 +498,9 @@ function HoyScreen({
   online,
   unread,
   galponesCount,
+  updatesUnread,
   onOpenNotifications,
+  onOpenUpdates,
   onOpenGalpones,
   onOpenClientes
 }: {
@@ -501,7 +508,9 @@ function HoyScreen({
   online: boolean;
   unread: number;
   galponesCount: number;
+  updatesUnread: number;
   onOpenNotifications: () => void;
+  onOpenUpdates: () => void;
   onOpenGalpones: () => void;
   onOpenClientes: () => void;
 }) {
@@ -544,19 +553,34 @@ function HoyScreen({
               <p className="hoy-name">{user.name}</p>
             </div>
           </div>
-          <button
-            type="button"
-            className="hoy-bell"
-            onClick={onOpenNotifications}
-            aria-label={unread > 0 ? `Notificaciones, ${unread} sin leer` : 'Notificaciones'}
-          >
-            <Bell size={20} />
-            {unread > 0 && (
-              <span className="bell-badge" aria-live="polite">
-                {unread > 9 ? '9+' : unread}
-              </span>
-            )}
-          </button>
+          <div className="hoy-actions">
+            <button
+              type="button"
+              className="hoy-bell"
+              onClick={onOpenUpdates}
+              aria-label={updatesUnread > 0 ? `Novedades, ${updatesUnread} sin leer` : 'Novedades de la app'}
+            >
+              <Star size={20} />
+              {updatesUnread > 0 && (
+                <span className="bell-badge bell-badge-star" aria-live="polite">
+                  {updatesUnread > 9 ? '9+' : updatesUnread}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              className="hoy-bell"
+              onClick={onOpenNotifications}
+              aria-label={unread > 0 ? `Notificaciones, ${unread} sin leer` : 'Notificaciones'}
+            >
+              <Bell size={20} />
+              {unread > 0 && (
+                <span className="bell-badge" aria-live="polite">
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -2823,6 +2847,148 @@ function NotificationsSheet({
   );
 }
 
+function UpdatesSheet({
+  open,
+  updates,
+  canPublish,
+  onClose,
+  onPublished
+}: {
+  open: boolean;
+  updates: AppUpdate[];
+  canPublish: boolean;
+  onClose: () => void;
+  onPublished: () => void;
+}) {
+  const [composing, setComposing] = useState(false);
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [open, onClose]);
+
+  async function publish() {
+    setSaving(true);
+    setMessage('');
+    try {
+      await publishUpdate({ title: title.trim(), body: body.trim() });
+      setTitle('');
+      setBody('');
+      setComposing(false);
+      onPublished();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'No se pudo publicar.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (!open) return null;
+  return createPortal(
+    <div className="notif-scrim" role="dialog" aria-modal="true" aria-label="Novedades" onClick={onClose}>
+      <div className="notif-sheet" onClick={(event) => event.stopPropagation()}>
+        <div className="notif-head">
+          <h2 className="notif-title">Novedades</h2>
+          <button type="button" className="btn btn-ghost btn-icon" aria-label="Cerrar" onClick={onClose}>
+            <X size={20} />
+          </button>
+        </div>
+
+        {canPublish && (
+          <div className="update-publish">
+            {!composing ? (
+              <button type="button" className="btn btn-primary btn-block" onClick={() => setComposing(true)}>
+                <Plus size={18} />
+                Publicar novedad
+              </button>
+            ) : (
+              <div className="create-card">
+                <p className="create-card-title">Nueva novedad</p>
+                <label className="field">
+                  <span className="field-label">Título</span>
+                  <input className="field-control" maxLength={120} placeholder="Nueva versión 1.4" value={title} onChange={(event) => setTitle(event.target.value)} />
+                </label>
+                <label className="field">
+                  <span className="field-label">Descripción</span>
+                  <textarea
+                    className="field-control update-textarea"
+                    maxLength={1000}
+                    rows={3}
+                    placeholder="Qué mejoró en esta actualización…"
+                    value={body}
+                    onChange={(event) => setBody(event.target.value)}
+                  />
+                </label>
+                {message && (
+                  <p className="status-message status-message-danger" role="alert">
+                    {message}
+                  </p>
+                )}
+                <div className="confirm-inline-actions">
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => {
+                      setComposing(false);
+                      setTitle('');
+                      setBody('');
+                      setMessage('');
+                    }}
+                  >
+                    Cancelar
+                  </button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={publish} disabled={saving || title.trim().length < 1} aria-busy={saving}>
+                    {saving ? 'Publicando…' : 'Publicar y avisar'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {updates.length === 0 ? (
+          <div className="notif-empty">
+            <span className="notif-empty-icon" aria-hidden="true">
+              <Star size={26} />
+            </span>
+            <p className="notif-empty-text">Sin novedades todavía</p>
+            <p className="notif-empty-sub">Aquí verás las mejoras y actualizaciones de la app.</p>
+          </div>
+        ) : (
+          <div className="notif-list">
+            {updates.map((item) => (
+              <div key={item.id} className="notif-row notif-row-update">
+                <span className="notif-icon notif-icon-star" aria-hidden="true">
+                  <Star size={18} />
+                </span>
+                <span className="notif-main">
+                  <span className="notif-row-title">{item.title}</span>
+                  {item.body && <span className="notif-row-body">{item.body}</span>}
+                  <span className="notif-time">{showDate(item.created_at)}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function PushBanner({
   status,
   canInstall,
@@ -3621,6 +3787,10 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [unread, setUnread] = useState(0);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [updates, setUpdates] = useState<AppUpdate[]>([]);
+  const [updatesUnread, setUpdatesUnread] = useState(0);
+  const [canPublish, setCanPublish] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
   const [galpones, setGalpones] = useState<Galpon[]>([]);
   const [pushStatus, setPushStatus] = useState<PushStatus | null>(null);
   const [deferredPrompt, setDeferredPrompt] = useState<InstallPromptEvent | null>(null);
@@ -3694,6 +3864,25 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
     }
   }
 
+  async function loadUpdates() {
+    try {
+      const result = await getUpdates();
+      setUpdates(result.updates);
+      setUpdatesUnread(result.unreadCount);
+      setCanPublish(result.canPublish);
+    } catch {
+      /* sin conexion o error transitorio: se reintenta en el siguiente ciclo */
+    }
+  }
+
+  async function openUpdates() {
+    setUpdatesOpen(true);
+    if (updatesUnread > 0) {
+      setUpdatesUnread(0);
+      await markUpdatesRead().catch(() => undefined);
+    }
+  }
+
   async function runSync() {
     await syncQueuedOperations().catch(() => undefined);
     await refreshPending();
@@ -3725,11 +3914,18 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   useEffect(() => {
     if (!isAdmin) return;
     loadNotifications();
+    loadUpdates();
     const interval = setInterval(() => {
-      if (!document.hidden) loadNotifications();
+      if (!document.hidden) {
+        loadNotifications();
+        loadUpdates();
+      }
     }, 25000);
     const onFocus = () => {
-      if (!document.hidden) loadNotifications();
+      if (!document.hidden) {
+        loadNotifications();
+        loadUpdates();
+      }
     };
     document.addEventListener('visibilitychange', onFocus);
     window.addEventListener('focus', onFocus);
@@ -3783,7 +3979,9 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
             online={online}
             unread={unread}
             galponesCount={galpones.length}
+            updatesUnread={updatesUnread}
             onOpenNotifications={openNotifications}
+            onOpenUpdates={openUpdates}
             onOpenGalpones={() => selectView('galpones-stats')}
             onOpenClientes={() => selectView('clientes')}
           />
@@ -3860,6 +4058,14 @@ function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
       )}
 
       <NotificationsSheet open={notifOpen} notifications={notifications} onClose={() => setNotifOpen(false)} />
+
+      <UpdatesSheet
+        open={updatesOpen}
+        updates={updates}
+        canPublish={canPublish}
+        onClose={() => setUpdatesOpen(false)}
+        onPublished={loadUpdates}
+      />
 
       {pushStatus && (
         <NotifSettingsSheet
